@@ -1,0 +1,334 @@
+---
+title: "Gaps in database coveragek"
+output: html_notebook
+---
+Search for species richness in a group, vs database coverage for major loci
+
+```{r, message=F, echo=F}
+library (tidyverse)
+library (rentrez)
+library(here)
+library(insect)
+
+```
+
+## Mictophids
+
+Mictophids are a very diverse group, but with patchy coverage in public databases
+
+### Step1: species richness
+
+Of course, the number of described species is not an accurate reflection of the actual species diversity in nature, but it will be the baseline for this experiment.
+
+```{r}
+taxonomy.today <- read_rds(file.path(Shared_resources,"taxonomy.rds" ))
+
+
+```
+
+### Get children taxa from Myctophids
+```{r}
+taxonomy.today %>% 
+  filter (name == "Myctophidae") %>% 
+  select(parent_taxID = taxID) %>% 
+  semi_join(taxonomy.today, .) %>%# 32 genera
+  select(parent_taxID = taxID, genus = name) %>%
+  inner_join(taxonomy.today, .) -> Step1 # 233 species
+  
+Step1 %>% 
+  filter (rank == "no rank") %>% 
+  filter (!str_detect(name, "environmental")) %>% 
+  select(parent_taxID = taxID, genus) %>%
+  inner_join(taxonomy.today, .) %>% 
+  filter (!str_detect(name, "environmental")) -> Bins # 131 bins
+
+Step1 %>% 
+filter (rank != "no rank") -> Myctophid.spp
+
+bind_rows(Myctophid.spp, Bins) -> All.Myctophid
+
+```
+
+## Genebank Searches
+
+Let's search the coverage of these species for the most common reference markers
+
+### 16S rRNA
+
+```{r}
+query <- "Myctophidae[ORGN]+AND+16S[TITL]"
+Mycto.GB <- searchGB(query,taxIDs = T, sequences = T, prompt = F )
+# tibble(Accesions = Mycto.GB) ->
+query2 <- "Myctophidae[ORGN]+AND+rRNA[TITL]"
+Mycto2 <- searchGB(query2,taxIDs = T, sequences = T, prompt = F )
+# tibble (Accessions = Mycto2)
+query3 <- 'Myctophidae[ORGN]+AND+mitochondrion[TITL]'
+Mycto3<- searchGB(query3, taxIDs = T, prompt = F)
+
+```
+
+#### Extract species info
+
+```{r}
+list (Mycto.GB, Mycto2, Mycto3) %>% 
+  map(~tibble (names = names(.x)) ) %>% 
+  bind_rows %>% 
+  distinct() %>% 
+  separate(names, into = c('Acc', 'taxID'), sep = "\\|", convert = T) %>% 
+  group_by(taxID) %>% 
+  tally(name ="counts"  ) -> Present.16S
+
+Present.16S %>%
+  right_join(All.Myctophid) %>% 
+  replace_na(list (counts=0)) %>% 
+  # distinct(counts)
+  mutate (coverage = case_when(counts>1 ~ "+2" ,
+                               TRUE     ~as.character(counts)),
+          locus = "16S") %>% 
+  select (name, genus, coverage, locus) %>% 
+  mutate(coverage = fct_relevel(coverage, "+2", '1' )) -> to.plot
+  # filter (genus %in% c("Benthosema", "Lobianchia", 'Diaphus')) %>% 
+  
+to.plot %>% 
+  ggplot(aes(x = locus))+
+  geom_bar(aes( fill = coverage)) +
+  facet_grid(~genus, scales = "free", space = 'free' , )+
+  coord_flip() +
+  theme(panel.margin.x=unit(0, "lines"),
+        strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()
+        ) +
+  labs(x = '')
+
+ggsave(filename = here("Manuscript", "16S.coverage.png"), height = 3, width = 21,dpi = 'retina')
+
+to.plot %>%
+  mutate(species = fct_reorder2(name, genus, coverage)) %>% 
+  ggplot (aes(x = species)) +
+  geom_bar(aes(fill = coverage), color = 'black')
+
+ggsave(filename = here("Manuscript", "16S.coveragev2.png"), height = 3, width = 21,dpi = 'retina')
+```
+
+## Cytb rRNA
+
+```{r}
+query <- "Myctophidae[ORGN]+AND+Cytb[TITL]"
+Mycto.GB <- searchGB(query,taxIDs = T, sequences = T, prompt = F )
+```
+
+```{r}
+list (Mycto.GB, Mycto3) %>% 
+  map(~tibble (names = names(.x)) ) %>% 
+  bind_rows %>% 
+  distinct() %>% 
+  separate(names, into = c('Acc', 'taxID'), sep = "\\|", convert = T) %>% 
+  group_by(taxID) %>% 
+  tally(name ="counts"  ) -> Present.Cytb
+
+Present.Cytb %>%
+  right_join(All.Myctophid) %>% 
+  replace_na(list (counts=0)) %>% 
+  # distinct(counts)
+  mutate (coverage = case_when(counts>1 ~ "+2" ,
+                               TRUE     ~as.character(counts)),
+          locus = "Cytb") %>% 
+  select (name, genus, coverage, locus) %>% 
+  mutate(coverage = fct_relevel(coverage, "+2", '1' )) -> to.plot
+  # filter (genus %in% c("Benthosema", "Lobianchia", 'Diaphus')) %>% 
+  
+to.plot %>% 
+  ggplot(aes(x = locus))+
+  geom_bar(aes( fill = coverage)) +
+  facet_grid(~genus, scales = "free", space = 'free' , )+
+  coord_flip() +
+  theme(panel.margin.x=unit(0, "lines"),
+        strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()
+        ) +
+  labs(x = '')
+
+ggsave(filename = here("Manuscript", "Cytb.coverage.png"), height = 3, width = 21,dpi = 'retina')
+
+to.plot %>%
+  mutate(species = fct_reorder2(name, genus, coverage)) %>% 
+  ggplot (aes(x = species)) +
+  geom_bar(aes(fill = coverage), color = 'black')
+
+ggsave(filename = here("Manuscript", "Cytb.coveragev2.png"), height = 3, width = 21,dpi = 'retina')
+```
+
+## 12S
+
+```{r}
+query <- "Myctophidae[ORGN]+AND+12S[TITL]"
+Mycto.GB <- searchGB(query,taxIDs = T, sequences = T, prompt = F )
+```
+```{r}
+list (Mycto.GB, Mycto2, Mycto3) %>% 
+  map(~tibble (names = names(.x)) ) %>% 
+  bind_rows %>% 
+  distinct() %>% 
+  separate(names, into = c('Acc', 'taxID'), sep = "\\|", convert = T) %>% 
+  group_by(taxID) %>% 
+  tally(name ="counts"  ) -> Present.12S
+
+Present.12S %>%
+  right_join(All.Myctophid) %>% 
+  replace_na(list (counts=0)) %>% 
+  # distinct(counts)
+  mutate (coverage = case_when(counts>1 ~ "+2" ,
+                               TRUE     ~as.character(counts)),
+          locus = "12S") %>% 
+  select (name, genus, coverage, locus) %>% 
+  mutate(coverage = fct_relevel(coverage, "+2", '1' )) -> to.plot
+  # filter (genus %in% c("Benthosema", "Lobianchia", 'Diaphus')) %>% 
+  
+to.plot %>% 
+  ggplot(aes(x = locus))+
+  geom_bar(aes( fill = coverage)) +
+  facet_grid(~genus, scales = "free", space = 'free' , )+
+  coord_flip() +
+  theme(panel.margin.x=unit(0, "lines"),
+        strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()
+        ) +
+  labs(x = '')
+
+ggsave(filename = here("Manuscript", "12S.coverage.png"), height = 3, width = 21,dpi = 'retina')
+
+to.plot %>%
+  mutate(species = fct_reorder2(name, genus, coverage)) %>% 
+  ggplot (aes(x = species)) +
+  geom_bar(aes(fill = coverage), color = 'black')
+
+ggsave(filename = here("Manuscript", "12S.coveragev2.png"), height = 3, width = 21,dpi = 'retina')
+```
+
+
+## COI
+
+```{r}
+query <- "Myctophidae[ORGN]+AND+COI[TITL]"
+Mycto.GB <- searchGB(query,taxIDs = T, sequences = T, prompt = F )
+```
+
+```{r}
+list (Mycto.GB, Mycto3) %>% 
+  map(~tibble (names = names(.x)) ) %>% 
+  bind_rows %>% 
+  distinct() %>% 
+  separate(names, into = c('Acc', 'taxID'), sep = "\\|", convert = T) %>% 
+  group_by(taxID) %>% 
+  tally(name ="counts"  ) -> Present.COI
+
+Present.Cytb %>%
+  right_join(All.Myctophid) %>% 
+  replace_na(list (counts=0)) %>% 
+  # distinct(counts)
+  mutate (coverage = case_when(counts>1 ~ "+2" ,
+                               TRUE     ~as.character(counts)),
+          locus = "COI") %>% 
+  select (name, genus, coverage, locus) %>% 
+  mutate(coverage = fct_relevel(coverage, "+2", '1' )) -> to.plot
+  # filter (genus %in% c("Benthosema", "Lobianchia", 'Diaphus')) %>% 
+  
+to.plot %>% 
+  ggplot(aes(x = locus))+
+  geom_bar(aes( fill = coverage)) +
+  facet_grid(~genus, scales = "free", space = 'free' , )+
+  coord_flip() +
+  theme(panel.margin.x=unit(0, "lines"),
+        strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()
+        ) +
+  labs(x = '')
+
+ggsave(filename = here("Manuscript", "COI.coverage.png"), height = 3, width = 21,dpi = 'retina')
+
+to.plot %>%
+  mutate(species = fct_reorder2(name, genus, coverage)) %>% 
+  ggplot (aes(x = species)) +
+  geom_bar(aes(fill = coverage), color = 'black')
+
+ggsave(filename = here("Manuscript", "COI.coveragev2.png"), height = 3, width = 21,dpi = 'retina')
+```
+
+```{r}
+list ("12S" = Present.12S, "16S" = Present.16S, COI = Present.COI, Cytb = Present.Cytb) %>% 
+  map(~right_join(.x,All.Myctophid)) %>% 
+  bind_rows(.id = "locus") %>% 
+  # right_join(All.Myctophid) %>% 
+  replace_na(list (counts=0)) %>% 
+  # distinct(counts)
+  mutate (coverage = case_when(counts>1 ~ "+2" ,
+                               TRUE     ~as.character(counts))) %>% 
+  select (name, genus, coverage, locus) %>% 
+  mutate(coverage = fct_relevel(coverage, "+2", '1' )) -> to.plot
+
+write_rds(to.plot, here("Data", "coverage_data.rds"))
+```
+
+```{r}
+to.plot <- read_rds( here("Data", "coverage_data.rds"))
+
+to.plot %>% 
+  ggplot(aes(x = locus))+
+  geom_bar(aes( fill = coverage)) +
+  facet_grid(~genus, scales = "free", space = 'free' , )+
+  coord_flip() +
+  theme(panel.margin.x=unit(0, "lines"),
+        strip.background = element_blank(),
+        strip.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank()
+        ) +
+  labs(x = '')
+
+ggsave(filename = here("Manuscript", "All.coverage.png"), height = 10, width = 21,dpi = 'retina')
+```
+
+```{r}
+library(patchwork)
+
+to.plot %>%
+  group_by(locus) %>% 
+  nest() %>% 
+  mutate(data = map(data, ~ .x %>% 
+                      mutate(species = fct_reorder2(name, genus, coverage))),
+         plot = map2(data,locus ,  ~.x %>% 
+                       mutate (locus = .y) %>% 
+                       ggplot (aes(x = species)) +
+  geom_bar(aes(fill = coverage), color = 'black') +
+    theme(axis.title.x = element_blank()) +
+  facet_wrap(ncol = 1, facets = ~locus)
+                       ))   %>%
+  pull(plot)-> plots 
+
+plots[[4]] +   theme(axis.title.x = element_text(size = 18)) -> plots[[4]]
+
+wrap_plots(plots,ncol = 1,guides = "collect") & 
+  scale_fill_viridis_d(option = "plasma", direction = -1, breaks =c("0", "1", "+2") , labels = c("Absent", "1 sequence", "2 or more")) & 
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.y = element_blank(),
+        
+        strip.text = element_text(face = "bold", color = "white", size = 22),
+        strip.background = element_rect(fill = "black"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 22),
+        legend.title = element_text(size = 24)) 
+  
+  
+
+ggsave(filename = here("Manuscript", "All.coveragev2.png"), height = 11, width = 21,dpi = 'retina')
+```
+
