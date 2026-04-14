@@ -1,0 +1,30 @@
+This is cutadapt 5.0 with Python 3.12.9
+Command line parameters: -g GGGTTGGTAAATTTCGTGCCAGC;min_overlap=15 --discard-untrimmed -e 0.2 data/seqs_control//Vulpes.fasta --rc -o data/seqs_control//trimmed/Vulpes_with_fwd.fasta
+Processing single-end reads on 1 core ...
+
+=== Summary ===
+
+Total reads processed:                      83
+Reads with adapters:                        30 (36.1%)
+Reverse-complemented:                        0 (0.0%)
+
+== Read fate breakdown ==
+Reads discarded as untrimmed:               53 (63.9%)
+Reads written (passing filters):            30 (36.1%)
+
+Total basepairs processed:       805,459 bp
+Total written (filtered):        487,763 bp (60.6%)
+
+=== Adapter 1 ===
+
+Sequence: GGGTTGGTAAATTTCGTGCCAGC; Type: regular 5'; Length: 23; Trimmed: 30 times; Reverse-complemented: 0 times
+
+Minimum overlap: 15
+No. of allowed errors:
+1-4 bp: 0; 5-9 bp: 1; 10-14 bp: 2; 15-19 bp: 3; 20-23 bp: 4
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+245	1	0.0	4	1
+315	28	0.0	4	28
+684	1	0.0	4	1
