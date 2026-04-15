@@ -1,4 +1,4 @@
-This is cutadapt 5.0 with Python 3.12.9
+This is cutadapt 5.2 with Python 3.12.12
 Command line parameters: -g GGGTTGGTAAATTTCGTGCCAGC;min_overlap=15 --discard-untrimmed -e 0.2 data/seqs_control//Vulpes.fasta --rc -o data/seqs_control//trimmed/Vulpes_with_fwd.fasta
 Processing single-end reads on 1 core ...
 

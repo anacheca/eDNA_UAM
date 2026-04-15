@@ -1,0 +1,29 @@
+This is cutadapt 5.2 with Python 3.12.12
+Command line parameters: -g CATAGTGGGGTATCTAATCCCAGTTTG;min_overlap=15 --discard-untrimmed -e 0.2 data/seqs_control//trimmed/Koala_with_fwd.fasta --rc -o data/seqs_control//trimmed/Koala_with_both.fasta
+Processing single-end reads on 1 core ...
+
+=== Summary ===
+
+Total reads processed:                       3
+Reads with adapters:                         3 (100.0%)
+Reverse-complemented:                        3 (100.0%)
+
+== Read fate breakdown ==
+Reads discarded as untrimmed:                0 (0.0%)
+Reads written (passing filters):             3 (100.0%)
+
+Total basepairs processed:        48,113 bp
+Total written (filtered):            507 bp (1.1%)
+
+=== Adapter 1 ===
+
+Sequence: CATAGTGGGGTATCTAATCCCAGTTTG; Type: regular 5'; Length: 27; Trimmed: 3 times; Reverse-complemented: 3 times
+
+Minimum overlap: 15
+No. of allowed errors:
+1-4 bp: 0; 5-9 bp: 1; 10-14 bp: 2; 15-19 bp: 3; 20-24 bp: 4; 25-27 bp: 5
+
+Overview of removed sequences
+length	count	expect	max.err	error counts
+15866	1	0.0	5	0 1
+15870	2	0.0	5	0 2
