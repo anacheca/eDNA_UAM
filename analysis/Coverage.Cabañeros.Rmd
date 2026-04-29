@@ -1,0 +1,162 @@
+---
+title: "Checking 12S db coverage"
+output: html_notebook
+---
+
+In this project I am using the existing taxonomic classifier includding the FASTA sequences targetting 12S for vertabrate species (https://github.com/terrimporter/12SvertebrateClassifier/releases/tag/v2.0.0-ref). The aim is to compare this reference dataset with my species list from Cabañeros National Park to assess whether the species present in my study area are represented, providing a first estimate of coverage.
+
+For full primer coverage I will test my primers "Mimammal" FW - GGGTTGGTAAATTTCGTGCCAGC RV -CATAGTGGGGTATCTAATCCCAGTTTG against the sequences
+
+```{r}
+library(tidyverse)
+library(here)
+library(eDNAfuns)
+```
+
+Target species
+
+```{r}
+species_df <- read_excel(here("data/Cabañeros lista de especies.xlsx")) %>%
+  select(Genero_especie) %>%
+  filter(!is.na(Genero_especie)) %>%
+  mutate(Genero_especie = str_trim(Genero_especie))
+```
+
+Ref_db
+```{r}
+Vert_12S_db <- fasta_reader(here("dbs/dbs/v2.0.0-ref/mytrainseq.fasta")) %>% separate(header, into= c("Accession", "tax"), sep = "\t")
+```
+```{r}
+Vert_12S_db <- Vert_12S_db %>% 
+  mutate(species = str_extract(tax, "(?<=s__)[^;]+"),
+         species = str_replace_all(species, "_", " "))
+```
+first check
+```{r}
+species_df %>% 
+  inner_join(Vert_12S_db, by =c("Genero_especie"="species")) -> direct_matches
+
+direct_matches %>% 
+  distinct(Genero_especie)
+
+species_df %>% 
+  anti_join(Vert_12S_db, by =c("Genero_especie"="species")) %>% 
+  separate(Genero_especie, into= c("genus", "species")) -> missing_taxa
+
+Vert_12S_db %>% 
+  mutate(genus = str_extract(tax, "(?<=g__)[^;]+")) -> Vert_12S_db
+
+missing_taxa %>% 
+   distinct(genus) %>% 
+  inner_join(Vert_12S_db %>% select(genus, species)) -> with_genus_coverage
+
+missing_taxa %>% 
+   distinct(genus) %>%
+  anti_join(Vert_12S_db )
+```
+
+Check rCRUX
+
+```{r}
+taxonomy_cols <- c("kingdom", "phylum", "class", "order", "family", "genus", "species")
+
+rCRUX_tax <- read_delim(here("dbs/12S_expanded/derep_and_clean_db/12S_expanded_derep_and_clean_taxonomy.txt"), delim = "\t", quote = "\"", col_names = c("header" , "tax")) %>% separate(tax, into = taxonomy_cols, sep = ";")
+
+rCRUX_tax %>% 
+  distinct(species)
+  
+  
+```
+first check
+```{r}
+species_df %>% 
+  inner_join(rCRUX_tax, by =c("Genero_especie"="species")) -> direct_matches
+
+direct_matches %>% 
+  distinct(Genero_especie)
+
+missing_taxa <- species_df %>% 
+  anti_join(rCRUX_tax, by = c("Genero_especie" = "species"))
+```
+Combinar ambas bases
+
+```{r}
+species_df_clean <- species_df %>% 
+  mutate(species_join = tolower(trimws(Genero_especie)))
+
+Vert_12S_db_clean <- Vert_12S_db %>% 
+  mutate(species_join = str_extract(tax, "(?<=s__)[^;]+"),
+         species_join = str_replace_all(species_join, "_", " "),
+         species_join = tolower(trimws(species_join)))
+
+rCRUX_tax <- rCRUX_tax %>% 
+  mutate(species_join = tolower(trimws(species)))
+
+ref_db <- bind_rows(
+  Vert_12S_db_clean %>% select(species_join),
+  rCRUX_tax %>% select(species_join)
+) %>% distinct()
+
+missing_taxa <- species_df_clean %>% 
+  mutate (species_join= str_replace(species_join, "rana perezi", "pelophylax perezi")) %>% 
+  anti_join(ref_db, by = "species_join")
+
+```
+
+FOr the missing ones, check GB to see if there are reference sequecnes that appear in GB but not yet in the curated databases
+
+```{r}
+target <- here("dbs/download_seqs/")
+
+missing_taxa %>% 
+  rowwise() %>% 
+  mutate(query_12S = map_chr(Genero_especie, ~paste0(.x, "[ORGN]+AND+12S[TITL]"))) -> missing_taxa
+
+
+search_safe <- function(q) {
+  tryCatch(
+    insect::searchGB(
+      query = URLencode(q),
+      taxIDs = TRUE,
+      sequences = TRUE,
+      prompt = FALSE
+    ),
+    error = function(e) NA,
+    warning = function(w) NA
+  )
+}
+
+
+missing_taxa %>% 
+  mutate(seqs_12S = map(query_12S, ~search_safe(.x))) -> missing_taxa
+```
+
+```{r}
+(missing_taxa$seqs_12S) %>% 
+  map_chr(class) %>% 
+  enframe() %>% 
+  bind_cols(missing_taxa) %>% 
+  
+  filter(value != "DNAbin") -> still_missing
+```
+
+```{r}
+(missing_taxa$seqs_12S) %>% 
+  map_chr(class) %>% 
+  enframe() %>% 
+  bind_cols(missing_taxa) %>% 
+  
+  filter(value == "DNAbin") -> NCBI_for_gaps
+```
+Now let's see if the fragments contain our primers (it could be that the sequence is homologous but the submitters already deleted the primers)
+
+```{r}
+MiMammalF <- "GGGTTGGTAAATTTCGTGCCAGC"
+MiMammalR <- "CATAGTGGGGTATCTAATCCCAGTTTG"
+NCBI_for_gaps %>% 
+  mutate (target = map(seqs_12S, ~virtualPCR(.x, up= MiMammalF)) )
+```
+keep sequences of the ones that were found - fasta folder 
+modify the search for mitohchondrion genome - ve cambiando el query (que te diga moncho que ir poniendo)
+base de satos de referencia y de las especies de datos que faltan tengo estas
+de q especies hay cosas y de cuales no y explorar base de datos de mitogenomas en vez de 12S mitochondrion 

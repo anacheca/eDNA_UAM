@@ -1,0 +1,97 @@
+species,taxID,n_12S,coverage_12S,var_length_12S,amplicon_12S
+Bufo bufo,8384,8,media,NA,FALSE
+Bufo calamita,30326,11,media,NA,FALSE
+Alytes cisternasii,214502,17,media,NA,FALSE
+Discoglossus galganoi,97956,14,media,NA,FALSE
+Hyla arborea,121869,12,media,NA,FALSE
+Hyla meridionalis,272192,7,media,NA,FALSE
+Pelobates cultripes,61616,5,baja,NA,FALSE
+Pelodytes punctatus,43542,7,media,NA,FALSE
+Rana perezi,8403,6,media,NA,FALSE
+Pleurodeles waltl,8319,34,alta,NA,FALSE
+Salamandra salamandra,57571,76,alta,NA,FALSE
+Triturus boscai,323757,5,baja,NA,FALSE
+Triturus marmoratus,8328,6,media,NA,FALSE
+Triturus pygmaeus,171367,3,baja,NA,FALSE
+Anas acuta,28680,9,media,NA,FALSE
+Anas clypeata,NA,0,0,NA,FALSE
+Anas crecca,75839,5,baja,NA,FALSE
+Anas penelope,8838,1,baja,NA,FALSE
+Anas platyrhynchos,8839,32,alta,NA,FALSE
+Anas querquedula,75856,1,baja,NA,FALSE
+Anas strepera,75861,1,baja,NA,FALSE
+Anser anser,8843,7,media,NA,FALSE
+Aythya ferina,219593,1,baja,NA,FALSE
+Aythya fuligula,219594,96,alta,NA,FALSE
+Branta canadensis,8853,4,baja,NA,FALSE
+Netta rufina,30387,1,baja,NA,FALSE
+Oxyura leucocephala,90703,1,baja,NA,FALSE
+Apus apus,8895,7,media,NA,FALSE
+Apus caffer,1002741,2,baja,NA,FALSE
+Apus melba,670359,5,baja,NA,FALSE
+Apus pallidus,1160816,3,baja,NA,FALSE
+Accipiter gentilis,8957,8,media,NA,FALSE
+Accipiter nisus,211598,1,baja,NA,FALSE
+Aegypius monachus,8959,0,0,NA,FALSE
+Aquila adalberti,52408,0,0,NA,FALSE
+Aquila chrysaetos,8962,4,baja,NA,FALSE
+Buteo buteo,30397,10,media,NA,FALSE
+Circaetus gallicus,43465,1,baja,NA,FALSE
+Circus aeruginosus,8964,1,baja,NA,FALSE
+Circus cyaneus,43466,1,baja,NA,FALSE
+Circus pygargus,387828,0,0,NA,FALSE
+Elanus caeruleus,387830,0,0,NA,FALSE
+Gypaetus barbatus,33610,0,0,NA,FALSE
+Gyps fulvus,36247,1,baja,NA,FALSE
+Gyps rueppellii,8967,0,0,NA,FALSE
+Hieraaetus fasciatus,252784,1,baja,NA,FALSE
+Hieraaetus pennatus,70275,0,0,NA,FALSE
+Milvus migrans,52810,2,baja,NA,FALSE
+Milvus milvus,43518,0,0,NA,FALSE
+Neophron percnopterus,33608,2,baja,NA,FALSE
+Pandion haliaetus,56262,4,baja,NA,FALSE
+Pernis apivorus,43551,1,baja,NA,FALSE
+Ovis musimon,9938,22,alta,NA,FALSE
+Capreolus capreolus canus,NA,0,0,NA,FALSE
+Cervus elaphus hispanicus,141655,0,0,NA,FALSE
+Dama dama,30532,21,alta,NA,FALSE
+Sus scrofa,9823,155,alta,NA,FALSE
+Genetta genetta,94190,0,0,NA,FALSE
+Herpestes ichneumon,9700,4,baja,NA,FALSE
+Canis familiaris,9615,37,alta,NA,FALSE
+Vulpes vulpes silacea,NA,0,0,NA,FALSE
+Felis silvestris tartessia,NA,0,0,NA,FALSE
+Lutra lutra,9657,8,media,NA,FALSE
+Martes foina mediterranea,1926659,0,0,NA,FALSE
+Meles meles marianensis,NA,0,0,NA,FALSE
+Mustela nivalis,36239,9,media,NA,FALSE
+Mustela putorius aureolus,NA,0,0,NA,FALSE
+Lepus granatensis,100182,0,0,NA,FALSE
+Oryctolagus cuniculus,9986,25,alta,NA,FALSE
+Apodemus sylvaticus,10129,6,media,NA,FALSE
+Arvicola sapidus,88454,0,0,NA,FALSE
+Mus musculus,10090,68,alta,NA,FALSE
+Mus spretus,10096,2,baja,NA,FALSE
+Rattus norvegicus,10116,36,alta,NA,FALSE
+Rattus rattus,10117,16,media,NA,FALSE
+Erinaceus europaeus,9365,17,media,NA,FALSE
+Blanus cinereus,227091,0,0,NA,FALSE
+Anguis fragilis,102178,0,0,NA,FALSE
+Coluber hippocrepis,166086,41,alta,NA,FALSE
+Coronella girondica,186548,2,baja,NA,FALSE
+Elaphe scalaris,122933,2,baja,NA,FALSE
+Macroprotodon cucullatus,186554,5,baja,NA,FALSE
+Malpolon monspessulanus,184164,29,alta,NA,FALSE
+Natrix maura,8585,1,baja,NA,FALSE
+Natrix natrix,100823,4,baja,NA,FALSE
+Tarentola mauritanica,8569,200,alta,NA,FALSE
+Lacerta lepida,399537,11,media,NA,FALSE
+Lacerta schreiberi,80442,5,baja,NA,FALSE
+Podarcis hispanica,74081,200,alta,NA,FALSE
+Psammodromus algirus,80460,82,alta,NA,FALSE
+Psammodromus hispanicus,80468,6,media,NA,FALSE
+Chalcides bedriagai,500790,27,alta,NA,FALSE
+Chalcides striatus,227093,14,media,NA,FALSE
+Vipera latastei,246179,1,baja,NA,FALSE
+Emys orbicularis,82168,70,alta,NA,FALSE
+Mauremys leprosa,176197,3,baja,NA,FALSE
