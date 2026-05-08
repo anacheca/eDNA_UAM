@@ -1,0 +1,275 @@
+---
+title: "Checking 12S db coverage"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+In this project I am using the existing taxonomic classifier includding the FASTA sequences targetting 12S for vertabrate species (https://github.com/terrimporter/12SvertebrateClassifier/releases/tag/v2.0.0-ref). The aim is to compare this reference dataset with my species list from Cabañeros National Park to assess whether the species present in my study area are represented, providing a first estimate of coverage.
+
+For full primer coverage the primers "Mimammal" FW - GGGTTGGTAAATTTCGTGCCAGC RV -CATAGTGGGGTATCTAATCCCAGTTTG will be tested against the NCBI sequences.
+
+```{r}
+packages <- c("tidyverse", "here", "eDNAfuns", "readxl", 
+              "rentrez", "Biostrings", "insect", "ape")
+
+lapply(packages, library, character.only = TRUE)
+```
+
+Target species
+
+```{r}
+species_df <- read_excel(here("data/Cabañeros lista de especies.xlsx")) %>%  
+  select(Genero_especie) %>%                                                  # selecciona solo la columna de nombres de especies
+  filter(!is.na(Genero_especie)) %>%                                          # elimina filas donde la especie es NA
+  mutate(Genero_especie = str_trim(Genero_especie))                           # elimina espacios al inicio/final del nombre
+```
+
+Ref_db 
+[GitHub release v2.0.0-ref - 12S vertebrate classifier](https://github.com/terrimporter/12SvertebrateClassifier/releases/tag/v2.0.0-ref)
+```{r}
+Vert_12S_db <- fasta_reader(here("dbs/dbs/v2.0.0-ref/mytrainseq.fasta")) %>%  # lee el archivo FASTA de referencia
+  separate(header, into= c("Accession", "tax"), sep = "\t")                   # separa la cabecera en accession y taxonomía
+```
+
+```{r}
+Vert_12S_db <- Vert_12S_db %>%                                    
+  mutate(species = str_extract(tax, "(?<=s__)[^;]+"),                         # extrae el nombre de especie del campo tax
+         species = str_replace_all(species, "_", " "))                        # reemplaza "_" por espacios en nombres de especie
+```
+
+first check
+```{r}
+species_df %>% 
+  inner_join(Vert_12S_db, by =c("Genero_especie"="species")) -> direct_matches # une solo las especies que coinciden en ambas tablas
+
+direct_matches %>% 
+  distinct(Genero_especie) # elimina duplicados de especies encontradas
+
+species_df %>%                                                    
+  anti_join(Vert_12S_db, by =c("Genero_especie"="species")) %>%               # se queda con las especies que NO están en la base
+  separate(Genero_especie, into= c("genus", "species")) -> missing_taxa_vert12 # separa en género y especie y guarda resultado
+
+Vert_12S_db %>%                                                   
+  mutate(genus = str_extract(tax, "(?<=g__)[^;]+")) -> Vert_12S_db            # extrae el género del campo tax y sobrescribe la tabla
+
+missing_taxa_vert12 %>%                                                       # usa las especies que faltan
+  distinct(genus) %>%                                                         # obtiene lista única de géneros
+  inner_join(Vert_12S_db %>% select(genus, species)) -> with_genus_coverage   # ve qué especies de esos géneros sí existen en la base
+
+missing_taxa_vert12 %>%                                                       # usa las especies que faltan
+  distinct(genus) %>%                                                         # lista única de géneros
+  anti_join(Vert_12S_db )                                                     # encuentra géneros completamente ausentes en la base
+```
+
+Check rCRUX [12S expanded reference database (Zenodo)](https://zenodo.org/records/8409202)
+
+```{r}
+taxonomy_cols <- c("kingdom", "phylum", "class", "order", "family", "genus", "species") # define nombres de columnas taxonómicas
+
+rCRUX_tax <- read_delim(here("dbs/12S_expanded/derep_and_clean_db/12S_expanded_derep_and_clean_taxonomy.txt"), delim = "\t", quote = "\"", col_names = c("header" , "tax")) %>% separate(tax, into = taxonomy_cols, sep = ";") # separa la taxonomía en columnas
+
+rCRUX_tax %>% 
+  distinct(species)
+  
+  
+```
+first check
+```{r}
+species_df %>% 
+  inner_join(rCRUX_tax, by =c("Genero_especie"="species")) -> direct_matches  # encuentra especies presentes en rCRUX
+
+direct_matches %>% 
+  distinct(Genero_especie) # elimina duplicados
+
+missing_taxa_crux <- species_df %>%                               
+  anti_join(rCRUX_tax, by = c("Genero_especie" = "species")) # especies que NO están en rCRUX                  
+```
+Combinar ambas bases
+
+```{r}
+species_df_clean <- species_df %>% 
+  mutate(species_join = tolower(trimws(Genero_especie))) # crea nombre limpio (minúsculas + sin espacios)
+
+Vert_12S_db_clean <- Vert_12S_db %>%                              
+  mutate(species_join = str_extract(tax, "(?<=s__)[^;]+"),                    # extrae especie
+         species_join = str_replace_all(species_join, "_", " "),              # limpia "_" 
+         species_join = tolower(trimws(species_join)))                        # pasa a minúsculas y limpia espacios
+
+rCRUX_tax <- rCRUX_tax %>%                                        
+  mutate(species_join = tolower(trimws(species)))                             # limpia nombres
+
+ref_db <- bind_rows(                                                          # une dos dataframes
+  Vert_12S_db_clean %>% select(species_join),                                 # toma especies de 12S
+  rCRUX_tax %>% select(species_join)                                          # toma especies de rCRUX
+) %>% distinct()                                                              # elimina duplicados
+
+missing_taxa_vert12s_crux <- species_df_clean %>%                             # usa lista limpia
+  mutate (species_join= str_replace(species_join, "rana perezi", "pelophylax perezi")) %>% # corrige nombre
+  anti_join(ref_db, by = "species_join")                                      # especies que NO están en ninguna base
+
+```
+
+FOr the missing ones, check GB to see if there are reference sequecnes that appear in GB but not yet in the curated databases
+
+```{r}
+target <- here("dbs/download_seqs/")
+
+missing_taxa_ncbi <- missing_taxa_vert12s_crux %>%                            # usa especies faltantes
+  rowwise() %>%                                                              # procesa fila por fila
+  mutate(query_12S = paste0(Genero_especie, "[ORGN]+AND+12S[TITL]"))          # crea query de búsqueda en NCBI para el 12S
+
+search_safe <- function(q) {                                                  # define función
+  tryCatch(                                                                   # controla errores
+    insect::searchGB(                                                         # busca en GenBank
+      query = URLencode(q),                                                   # codifica la query
+      taxIDs = TRUE,                                                          # devuelve IDs
+      sequences = TRUE,                                                       # devuelve secuencias
+      prompt = FALSE                                                          # no pregunta al usuario
+    ),
+    error = function(e) NA,                                                   # si error → NA
+    warning = function(w) NA                                                  # si warning → NA
+  )
+}
+
+
+missing_taxa_ncbi %>%                                                         # usa especies faltantes
+  mutate(seqs_12S = map(query_12S, ~search_safe(.x))) -> missing_taxa_ncbi    # ejecuta búsqueda para cada especie
+```
+
+```{r}
+(missing_taxa_ncbi$seqs_12S) %>%                                              # toma lista de secuencias
+  map_chr(class) %>%                                                          # obtiene clase de cada resultado
+  enframe() %>%                                                              # convierte en dataframe
+  bind_cols(missing_taxa_ncbi) %>%                                           # añade info original
+  filter(value != "DNAbin") -> still_missing_ncbi                            # se queda con las que NO tienen secuencias válidas
+```
+Now let's see if the fragments contain our primers (it could be that the sequence is homologous but the submitters already deleted the primers)
+
+```{r}
+MiMammalF <- "GGGTTGGTAAATTTCGTGCCAGC"
+MiMammalR <- "CATAGTGGGGTATCTAATCCCAGTTTG"
+NCBI_for_gaps %>% 
+  mutate (target = map(seqs_12S, ~virtualPCR(.x, up= MiMammalF)) ) # aplica PCR virtual con el primer
+
+still_missing_ncbi <- still_missing_ncbi %>%                                  # usa las que siguen faltando
+  distinct(species_join, .keep_all = TRUE)                                   # elimina duplicados
+```
+
+Unir TODO lo que falta (Vert12 + rCRUX + NCBI)
+Buscar en NCBI otra vez (mitogenomas)
+Ver qué sigue sin existir en ningún sitio
+(extra) comprobar primers → esto ya viste que no aporta mucho
+
+
+Combine the missing ones
+
+```{r}
+missing_taxa_all3 <- bind_rows(
+  missing_taxa_vert12s_crux %>%
+    select(Genero_especie, species_join) %>% 
+    mutate(database="rCRUX"), # especies que no estaban en Vert12 ni rCrux
+  still_missing_ncbi %>% select(Genero_especie, species_join) %>% 
+    mutate(database="NCBI") # especies que no estan en NCBI 12S
+) %>% 
+  distinct(species_join, .keep_all = TRUE) # eliminar duplicados
+
+missing_taxa_vert12s_crux <- missing_taxa_vert12s_crux %>%
+    select(Genero_especie, species_join) %>% 
+    mutate(database="rCRUX") # tabla limpia
+
+still_missing_ncbi_to_join <- still_missing_ncbi %>%
+  select(Genero_especie, species_join) %>% 
+    mutate(database="NCBI")
+
+still_missing_ncbi_to_join %>% 
+  anti_join(missing_taxa_vert12s_crux, by="species_join") # especies que aparecen como missing en NCBI pero no en las bases originales
+```
+To know which species we have no info - 
+any species from list A that is also on list B
+
+```{r}
+still_missing_ncbi_to_join %>% 
+  inner_join(missing_taxa_vert12s_crux, by="species_join") # lista de especies que no hay en ninguno de los sitios anteriores
+
+```
+
+Check GB to see if there are reference sequences changing the search commands
+
+```{r}
+target <- here("dbs/download_seqs/")
+
+missing_taxa_all3 <- missing_taxa_all3 %>% 
+  mutate(
+    query_mitochondrion = paste0(Genero_especie, "[ORGN]+AND+mitochondrion[TITL]")
+  )  # nueva query, buscar genoma mitocondrial completo
+
+search_safe <- function(q) {
+  tryCatch(
+    {
+      res <- insect::searchGB(
+        query = URLencode(q),
+        taxIDs = TRUE,
+        sequences = TRUE,
+        prompt = FALSE
+      )
+      return(res) # devuelve secuencias si todo va bien
+    },
+    error = function(e) {
+      message("ERROR en query: ", q)  
+      return(NULL)
+    },
+    warning = function(w) {
+      message("WARNING en query: ", q) 
+      return(NULL)
+    }
+  )
+}
+
+missing_taxa_all3 %>% 
+  mutate(seqs_mitochondrion = map(query_mitochondrion, ~search_safe(.x))) -> missing_taxa_all3 # ahora cada especie tiene sus secuencias (o NULL)
+```
+
+The ones still missing from the original list
+
+```{r}
+missing_taxa_all3$seqs_mitochondrion %>% 
+  map_chr(~class(.x)[1]) %>% 
+  enframe(name = "id", value = "class_seq") %>% 
+  bind_cols(missing_taxa_all3) %>% 
+  filter(class_seq != "DNAbin") -> still_missing_all3 # especies que siguen sin secuencias incluso buscando mitogenoma
+```
+
+
+```{r}
+(missing_taxa_all3$seqs_mitochondrion) %>% 
+  map_chr(class) %>% 
+  enframe() %>% 
+  bind_cols(missing_taxa_all3) %>% 
+  
+  filter(value == "DNAbin") -> NCBI_mitochondrion_for_gaps # especies que sí tienen secuencias de mitogenoma
+```
+
+If the fragments contain our primers 
+```{r}
+MiMammalF <- "GGGTTGGTAAATTTCGTGCCAGC"
+MiMammalR <- "CATAGTGGGGTATCTAATCCCAGTTTG"
+NCBI_mitochondrion_for_gaps %>% 
+  mutate (target = map(seqs_mitochondrion, ~virtualPCR(.x, up= MiMammalF)) ) -> NCBI_mitochondrion_for_gaps # comprueba si esas secuencias contienen tu primer
+
+NCBI_mitochondrion_for_gaps$target %>%   # selecciona la columna 'target' (resultado de virtualPCR)
+  map_chr(~class(.x)[1]) %>%             # miro la clase de cada elemento (DNAbin, NULL, etc.)
+  enframe(name = "id", value = "class_seq") %>%   # lo convierto en data frame con columna class_seq
+  bind_cols(NCBI_mitochondrion_for_gaps) %>%      # lo junto con el data frame original
+  filter(class_seq != "DNAbin") %>%     # me quedo con los que no son secuencias válidas
+  pull(seqs_mitochondrion) %>%          # extraigo sus secuencias originales
+  map(~insect::dna2char(.x) %>%         # convierto DNAbin → texto (A,T,C,G)
+        map(str_length) %>%             # calculo longitud de cada secuencia
+        enframe() %>%                  # paso a data frame
+        unnest(value))                 # aplano el resultado
+
+
+
+still_missing_all3 <- still_missing_all3 %>% 
+  distinct(species_join, .keep_all = TRUE) # lista final de especies que: no están en Vert12, CRUX, NCBI (12S) y (mitochondrion)
+```
