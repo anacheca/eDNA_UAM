@@ -5,7 +5,7 @@ output:
   html_notebook: default
 ---
 
-In this project I am using the existing taxonomic classifier includding the FASTA sequences targetting 12S for vertabrate species (https://github.com/terrimporter/12SvertebrateClassifier/releases/tag/v2.0.0-ref). The aim is to compare this reference dataset with my species list from Cabañeros National Park to assess whether the species present in my study area are represented, providing a first estimate of coverage.
+In this project I am using the existing taxonomic classifier including the FASTA sequences targeting 12S for vertebrate species (https://github.com/terrimporter/12SvertebrateClassifier/releases/tag/v2.0.0-ref). The aim is to compare this reference dataset with my species list from Cabañeros National Park to assess whether the species present in my study area are represented, providing a first estimate of coverage.
 
 For full primer coverage the primers "Mimammal" FW - GGGTTGGTAAATTTCGTGCCAGC RV -CATAGTGGGGTATCTAATCCCAGTTTG will be tested against the NCBI sequences.
 
@@ -273,3 +273,9 @@ NCBI_mitochondrion_for_gaps$target %>%   # selecciona la columna 'target' (resul
 still_missing_all3 <- still_missing_all3 %>% 
   distinct(species_join, .keep_all = TRUE) # lista final de especies que: no están en Vert12, CRUX, NCBI (12S) y (mitochondrion)
 ```
+
+Check midori database [Reference MIDORI for potential sequences of 12S and COI](https://www.reference-midori.info/download.php)
+```{r}
+
+```
+
