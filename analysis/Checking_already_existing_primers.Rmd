@@ -1,0 +1,546 @@
+---
+title: "Checking Primer Pairs"
+output: html_notebook
+---
+Given what we know about whole COI, or whole mtgenomes , or whole 12S-16S sequences, do already developed primers amplify long mtochondrial fragments ? At least in silico
+
+
+```{r}
+library(rentrez)
+library(insect)
+library(tidyverse)
+library(here)
+library(gggenes)
+```
+
+# Download whole mitogenomes
+
+```{r}
+queries <- c("Polychaeta", "Vermetidae", "Gorgoniidae", "Pleurogona", 
+             "Holothuriidae", "Bivalvia", "Asteroidea", 
+             "Bryozoa", "Echinoidea", "Hexacorallia", "Scyllaridae")
+
+new_queries2023 <- c("Tunicata",  "Palinuridae")
+
+query <- paste0( new_queries2023, #queries,
+                 '[ORGN]+AND+mitochondrion[TITL]+complete[TITL]')
+
+Search3<- map(query, ~ searchGB(.x, taxIDs = T, prompt = F))
+
+names(Search3) <- new_queries2023
+
+Search3 %>% compact()-> goodies
+
+ 
+
+for (i in 1:length(goodies)){
+  writeFASTA(goodies[[i]], file = here("data", "Data_seq", "Claudio", paste0(names(goodies)[i], ".fasta")))
+  
+}
+  map(~writeFASTA(.x, file = here("data", "Data_seq", "Moncho", "")))
+```
+
+```{r}
+ Search3 %>%
+  
+  map(~tibble (names = names(.x)) ) %>% 
+  set_names(nm = new_queries2023# queries
+            ) %>% 
+  bind_rows (.id = "query") %>% 
+  distinct() %>% 
+  separate(names, into = c('Acc', 'taxID'), sep = "\\|", convert = T) %>% 
+  group_by(taxID) %>% 
+  tally(name ="counts"  )
+```
+
+
+# Sets of primers
+
+All primers are in 5->3, so we'll do linear searches instead of primer pairs
+
+```{r}
+seqs <-readFASTA(here("data", "all_align_withprimers_FyRrc.fas"))
+
+names(seqs[14:31]) -> primers
+
+primer_Seqs <- dna2char(seqs[14:31]) %>% str_remove_all("-")
+
+names(primer_Seqs)<- primers
+
+primer_Seqs <- c(primer_Seqs, LerayF = "GGWACWGGWTGAACWGTWTAYCCYCC",
+                 "16Sar-L" = "CGCCTGTTTAACAAAAACAT", "LoboF" = "KBTCHACAAAYCAYAARGAYATHGG", 
+                  "16SbrH_revcom" = "ACGTGATCTGAGTTCAGACCGG")
+
+more_primers <- c( "M74_rev" = "TGATCTGAGTTCAAACCGGAG", "12Sai" ="AAACTAGGATTAGATACCCTATTAT" , "12Sbi_rev" = "ACACATCGCCCGTCGCTCTT")
+
+cytb <- c("Cytb424F"= "GGWTAYGTWYTWCCWTGRGGWCARAT", "cobr825_rev"= "CAYATYAARCCRGARTGRTAYTT")
+
+all_primers <- c(primer_Seqs, more_primers, cytb)
+
+ordered_primers <- all_primers[c(selected_fwds, selected_revs)]
+
+melting.temps <- read_csv2(here("data", "melting_temps.csv"))
+```
+
+
+```{r}
+Search3 %>% # Start with the list of mitochondrial genomes
+  compact() %>% 
+  map(function(taxon){
+    
+    # all_primers %>% 
+      ordered_primers %>% 
+      map(~ virtualPCR(taxon, .x))
+    
+  } ) -> with.one.primer
+
+write_rds(with.one.primer, here("data", "primer.search.rds"))
+```
+
+```{r}
+with.one.primer <- read_rds(here("data", "primer.search.rds"))
+```
+
+
+<!-- ## Add the other primers -->
+
+<!-- ```{r} -->
+<!-- Search3 %>% # Start with the list of mitochondrial genomes -->
+<!--   compact() %>%  -->
+<!--   map(function(taxon){ -->
+
+<!--     more_primers %>%  -->
+<!--       map(~ virtualPCR(taxon, .x)) -->
+
+<!--   } ) -> to.add -->
+
+<!-- map2(with.one.primer, to.add, append) -> with.one.primer -->
+
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- Search3 %>% # Start with the list of mitochondrial genomes -->
+<!--   compact() %>%  -->
+<!--   map(function(taxon){ -->
+
+<!--     cytb %>%  -->
+<!--       map(~ virtualPCR(taxon, .x)) -->
+
+<!--   } ) -> to.add -->
+
+<!-- map2(with.one.primer, to.add, append) -> with.one.primer -->
+<!-- ``` -->
+
+### Summarising results
+
+Let's try big bois: 
+
+
+```{r}
+# names(Search3) <- queries
+# 
+# Search3 %>% 
+#   compact() %>% names() -> names(with.one.primer)
+
+with.one.primer %>% 
+  
+   # map(compact) %>% 
+  as_tibble %>% 
+  mutate(loci = names(with.one.primer[[1]])) %>% 
+  pivot_longer(-loci, names_to = "taxon") %>% 
+  mutate(class = map_chr(value, class)) %>% 
+  filter (class != "NULL") %>% 
+  mutate(summary = map(value , ~tibble (names = names(.x), 
+                                        sequence = dna2char(.x)) %>% 
+                         mutate(length = str_length(sequence)))) %>% 
+  select(loci, taxon, summary) %>% 
+  unnest(summary) -> summary.data
+
+
+write_csv(summary.data, here("data", "summary.data.csv"))
+
+Search3 %>% 
+  compact() %>% 
+  map_df(~tibble(names = names(.x), 
+                 sequence = dna2char(.x)) %>% 
+        mutate(original.length = str_length(sequence)), .id = "taxon") %>% 
+  ggplot (aes(x = original.length, fill = taxon)) + geom_histogram()+ facet_wrap(~taxon, scales = "free")
+```
+
+
+What I can do now is to use the length after and before trimming to know where each primer sits
+
+## Length of sequences before trimming
+
+```{r}
+
+
+
+
+Search3 %>% 
+  compact() %>% 
+  map_df(~tibble(names = names(.x), 
+                 sequence = dna2char(.x)) %>% 
+        mutate(original.length = str_length(sequence)), .id = "taxon") %>% 
+  select(-sequence) -> original.lengths
+
+
+```
+
+## Length of primers
+
+```{r}
+tibble(seqs = all_primers, loci = names(all_primers)) %>% 
+  mutate(primer.length = str_length(seqs)) -> primer.lengths
+
+primer.lengths %>% 
+  mutate (gene = case_when(loci %in% c("16Sar-L", "16SbrH_revcom", "M74_rev") ~ "16S",
+                           loci %in% c("12Sai", "12Sbi_rev")           ~ "12S",
+                           loci %in% c("Cytb424F", "cobr825_rev")      ~ "Cytb",
+                           TRUE                                    ~ "COI")) -> primer.lengths
+```
+
+## Combine lenghts to create final table
+
+```{r}
+summary.data %>% 
+  select(loci, taxon, names, length) %>% 
+  left_join(original.lengths) %>% 
+  left_join(primer.lengths) %>% 
+  select(-seqs) %>% 
+  mutate(end  = original.length -length,
+         start = end - primer.length) -> to.plot
+
+to.plot %>% 
+  group_by(names) %>% 
+  filter(str_detect(gene, "COI")) %>%
+  filter(start == min(start)) %>% 
+  summarise(correction = 1490 - start) %>% 
+  # ungroup() %>% 
+  slice(1) %>% 
+  left_join(.,to.plot) %>% 
+  mutate(new.end = correction + end,
+         new.start = correction + start,
+         new.end = case_when(new.end < 0  ~ new.end + original.length,
+                             TRUE                      ~ new.end),
+         new.start = case_when(new.start < 0  ~ new.start + original.length,
+                              TRUE                      ~ new.start)) -> to.plot
+
+```
+
+## Visualize only one entry per taxid
+```{r}
+to.plot %>% separate(names, into = c("Accesion", "taxid"), sep = "\\|") %>% 
+  select(-Accesion) %>% 
+  group_by(taxid, loci) %>% 
+  nest() %>% 
+  mutate(data = map(data, ~.x %>% slice(1))) %>% 
+  unnest(data) -> plot
+  
+```
+
+## Adding taxon info
+
+You can get the taxonomy.rds file by using 'insect::taxonomy'
+
+
+```{r}
+# taxonomy <- insect::taxonomy()
+# write_rds(taxonomy, here("data", "taxonomy.rds"))
+taxonomy <- read_rds(here("data", "taxonomy.rds"))
+
+plot %>% 
+  ungroup() %>% 
+  distinct(taxid) %>% 
+  mutate(taxID = as.numeric(taxid)) %>% 
+  select(-taxid) -> pre.lineages
+
+insect::get_lineage(pre.lineages$taxID, db = taxonomy, cores = 'autodetect')-> lineages
+
+
+
+extract_lineage <- function(taxid){
+  
+  taxid[c("class", "family", "genus")] %>% bind_rows()
+}
+
+lineages %>% 
+  set_names(nm = pre.lineages$taxID) %>% 
+  discard(function(x) is.na(x[[1]]) ) %>%summary.data
+  map(extract_lineage) %>%
+  bind_rows(.id = "taxid") %>% 
+  select(taxid, class, family, genus) -> lineages_to_join
+```
+
+
+```{r}
+left_join(plot, lineages_to_join) %>% 
+  filter(taxon == "Polychaeta") %>% 
+  ggplot(aes(xmin = new.start, xmax = new.end, y = taxid, fill = gene)) +
+  geom_gene_arrow() +
+  facet_wrap(~taxon, ncol = 1) +
+  scale_fill_brewer(palette = "Set3") +
+  geom_gene_label(aes(label = loci ), fontface = "bold") +
+  theme_genes() +
+  theme(axis.text.y = element_text(face = "italic"),
+        axis.title.y = element_blank(),
+        legend.position = "bottom") +
+  coord_cartesian(xlim = c(0, NA)) +
+  labs(fill = "")
+
+ggsave(filename = here("figures", "Poychaeta.png"),width = 24,dpi = "retina"
+       )
+```
+
+
+## Align all primers
+
+Reorder all COI primers so we can choose carefully
+
+
+```{r}
+to.plot %>% 
+  filter (gene == "COI") %>%
+  group_by(loci) %>% 
+  summarise(med.start = median(new.start)) %>% 
+  arrange(med.start) %>% 
+  pull(loci) -> good.order.COI
+```
+
+
+```{r}
+to.plot %>% separate(names, into = c("Accesion", "taxid"), sep = "\\|") %>% 
+left_join(lineages_to_join) %>% 
+  group_by(taxon) %>% 
+  mutate (n_max_t = n_distinct(taxid),
+          n_gen   = n_distinct(genus)) %>% 
+  group_by(taxon, loci, gene) %>% 
+  summarise(coverage = n_distinct(taxid)/n_max_t,
+            genus    = n_distinct(genus)/n_gen,
+            n_spp    = n_distinct(taxid),
+            n_gen    = n_distinct(genus)) -> for.summary.plot
+
+for.summary.plot %>% distinct() %>% 
+  ggplot(aes(x= fct_relevel(loci,good.order.COI), y = taxon, fill = coverage)) +
+  geom_tile(color = "black")+
+  geom_label(aes(label = n_spp)) +
+  scale_fill_viridis_c() +
+  facet_grid(. ~ gene, scales = "free", space='free') +
+  
+  theme_dark() +
+  theme(axis.text.x = element_text(angle = 45))
+
+ggsave(filename = here("figures", "coverage_by_spp.png"), dpi = "retina", width = 24, height = 10)
+```
+
+
+## Distance between amplicons
+
+```{r}
+for.summary.plot %>%  
+  
+  mutate(dir = case_when(str_detect(loci, "rev") ~ "Reverse",
+                         TRUE                    ~ "Forward")) %>% 
+  group_by(taxon, gene, dir) %>% 
+  arrange(desc(n_gen)) %>% 
+  slice(1) %>% 
+  left_join(primer.lengths) %>% 
+  select(taxon, loci, gene, dir, seqs) %>% 
+  pivot_wider(names_from = dir, values_from = c(seqs, loci)) -> ready.for.second
+
+
+  
+
+```
+
+```{r}
+to.plot %>% 
+  group_by(names, correction, taxon, original.length) %>% 
+  nest() %>% 
+  mutate(data = map2(data,original.length,  ~.x %>% add_case(loci = "wholemt", gene = "wholemt", new.start = .y-100, new.end = .y))) %>% unnest(data) %>% 
+  separate(names, into = c("Accession", "taxid"), sep = "\\|") %>% 
+  
+  group_by(taxon, loci, gene) %>% 
+  summarise(new.end.median = median(new.end),
+            new.start.median= median(new.start)) %>% 
+  ggplot(aes(xmin = new.start.median, xmax = new.end.median+100, y = taxon, fill = gene)) +
+  geom_gene_arrow(arrow_body_height = grid::unit(10, "mm")                  ) +
+   # facet_wrap(~gene, nrow = 1) +
+  scale_fill_brewer(palette = "Set3") +
+  # geom_gene_label(aes(label = loci ), fontface = "bold") +
+  theme_genes() +
+  theme(axis.text.y = element_text(face = "italic"),
+        axis.title.y = element_blank(),
+        legend.position = "bottom") +
+  coord_cartesian(xlim = c(0, NA)) +
+  labs(fill = "")
+
+ggsave(here("figures", "average_loci_pos.png"),
+       dpi = "retina",
+       width = 28,
+       height = 14)
+
+```
+
+Good effort, but we want to know, for each specimen, the distance between loci
+
+```{r}
+to.plot %>% 
+  select(names, loci, taxon, original.length, new.start, gene) %>% 
+  pivot_wider(names_from = c(gene, loci), values_from = new.start)
+```
+
+```{r}
+to.plot %>% 
+  select(names, loci, taxon, original.length, new.start, gene) %>% 
+  group_by(names, gene) %>% 
+  mutate(min = min(new.start),
+         max = max(new.start)) %>% 
+  # ungroup() %>% 
+  filter (new.start == min | new.start == max) -> save.selected 
+  
+# save.selected %>% 
+#   select(names, taxon, original.length, gene, min, max) %>% 
+#   distinct() %>% 
+#   filter(taxon == "Polychaeta") %>% 
+#   ggplot(aes(xmin = min, xmax = max, y = names, fill = gene)) +
+#   geom_gene_arrow(                  ) +
+#    # facet_wrap(~gene, nrow = 1) +
+#   scale_fill_brewer(palette = "Set3") +
+#   # geom_gene_label(aes(label = gene ), fontface = "bold") +
+#   theme_genes() +
+#   theme(axis.text.y = element_text(face = "italic"),
+#         axis.title.y = element_blank(),
+#         legend.position = "bottom") +
+#   coord_cartesian(xlim = c(0, NA)) +
+#   labs(fill = "")
+
+
+save.selected %>% 
+  # select(names, taxon, original.length, gene, min, max) %>% 
+  # distinct() %>% 
+  filter (max -min > 5000)
+pivot_wider(names_from = c(gene), values_from = c(min,max)) %>% 
+  mutate(dist.COI.12S = max_12S - min_COI)
+```
+## Generate primers to order
+
+
+```{r}
+primer.lengths
+
+selected_fwds <- c("FolmerF_LCO1490",
+                   "LoboF",
+                   "12Sai",
+                   "Cytb424F",
+                   "16Sar-L")
+
+selected_revs <- c("FolmerR_HCO2198_revcomp",
+                   "newPAT_R2_revcomp",
+                   "12Sbi_rev",
+                   "cobr825_rev",
+                   "16SbrH_revcom")
+
+cola_fwd <-"TCGTCGGCAGCGTCAGATGTGTATAAGAGACAG"
+cola_rev <- "GTCTCGTGGGCTCGGAGATGTGTATAAGAGACAG"
+
+fwds <- primer.lengths %>% 
+  filter(loci %in% selected_fwds) %>% 
+  mutate(with_tag = paste0(cola_fwd, seqs),
+         name_tag = paste0(loci, "_illumina_F"))
+
+seqinr::write.fasta(sequences = as.list(fwds$with_tag),
+                    names = as.list(fwds$name_tag),
+                    file.out = here("output", "fwds_tagged.fasta"))
+
+revs <- primer.lengths %>% 
+  filter(loci %in% selected_revs) %>% 
+  mutate(original_or = insect::rc(seqs),
+         with_tag = paste0(cola_rev, original_or),
+         name_tag = str_replace(loci, "rev", "illumina_R"),
+         name_tag = str_remove(name_tag, "comp|com"))
+
+
+seqinr::write.fasta(sequences = as.list(revs$with_tag),
+                    names = as.list(revs$name_tag),
+                    file.out = here("output", "revs_tagged.fasta"))
+```
+
+## Selecion of candidates - performance together
+
+```{r}
+expand_grid(selected_fwds, selected_revs) %>% 
+  left_join(fwds %>%  select(seqF = seqs, selected_fwds = loci)) %>% 
+  left_join(revs %>% select(seqR = seqs, selected_revs = loci)) %>% 
+  unite(seqF, seqR, sep = "...", col = "seq") %>% 
+  unite(selected_fwds, selected_revs, sep = "-", col = "newname") -> for.cutadapt
+
+for.cutadapt %>% 
+  rowwise() %>% 
+  mutate(files = map2(seq, newname, function(.x, .y){
+    seqinr::write.fasta(sequences = .x, names = .y, file.out = here("output", "primers",paste0(.y, ".fasta")))
+    
+    
+  }))
+
+
+  
+```
+
+
+
+```{bash }
+
+for file in ../data/Data_seq/Moncho/*fasta; do
+basefile=$(basename "$file")
+ for primer in ../output/primers/*fasta; do
+ baseprimer=$(basename "$primer")
+ cutadapt -g "file:$primer" -o "../output/after_pcrs/$basefile-$baseprimer" $file --discard-untrimmed
+ done
+ 
+ done
+
+
+```
+
+
+
+## Summarise the data
+
+```{r}
+all.files <- tibble(names = list.files(here("output", "after_pcrs")),
+                    paths = list.files(here("output", "after_pcrs"), full.names = T))
+
+safe_read <- possibly(readFASTA, otherwise = NA)
+all.files %>% 
+  separate(names, into = c("taxon", "rest"), remove = F, sep = ".fasta-") %>% 
+  mutate(rest = str_replace(rest, "16Sar-L", "16SarL")) %>% 
+  separate(rest, into = c("fwd", "rev"), sep = "-") %>% 
+  mutate(rev = str_remove(rev, ".fasta")) %>% 
+  mutate(seqs = map(paths, safe_read)) -> all.files
+
+all.files %>% 
+  filter(!is.na(seqs)) %>% 
+  mutate(nseqs = map_dbl(seqs, length),
+         length = map_df(seqs, function(.x) .x %>% map(length) %>% bind_rows() )) %>% 
+  select(taxon, fwd, rev, length) %>% 
+  unnest() %>% 
+   pivot_longer(cols = where(is.numeric), names_to = "ACC", values_to = "len") %>% 
+  filter (!is.na(len)) %>% 
+  separate(ACC, into = c("Accesion", "taxid"), sep = "\\|") %>% 
+left_join(lineages_to_join) %>% 
+  group_by(taxon, fwd, rev) %>% 
+  summarise(n_seqs = n(),
+         n_genus = n_distinct(genus),
+            avg.length =  mean (len, na.rm= T))  %>% 
+  ggplot(aes(x = fwd, y = rev, fill= avg.length)) +
+  geom_tile(color="black")+
+  scale_fill_viridis_c() +
+  geom_label(aes(label = round(avg.length,0)))+
+  facet_wrap(~taxon)+
+  theme_dark()
+
+ggsave(filename = here("figures", "amplicon_length_by.taxa.png"), dpi = "retina", width = 24, height = 10)
+```
+
