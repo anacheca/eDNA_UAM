@@ -1,0 +1,553 @@
+---
+title: "Primers.coverage"
+output: html_document
+date: "2026-07-08"
+---
+
+MiFish-U-F	GTCGGTAAAACTCGTGCCAGC
+MiFish-U-R	GTTTGACCCTAATCTATGGGGTGATAC
+
+Mimammal 
+FW - GGGTTGGTAAATTTCGTGCCAGC  51DNAbin
+RV -CATAGTGGGGTATCTAATCCCAGTTTG
+
+12S–V5-F	TAGAACAGGCTCCTCTAG	14DNAbin
+12S-V5-R TTAGATACCCCACTATGC
+
+MarVer1F	CGTGCCAGCCACCGCG
+MarVer1R	GGGTATCTAATCCYAGTTTG
+
+MarVer3F	AGACGAGAAGACCCTRTG
+MarVer3R	GGATTGCGCTGTTATCCC
+
+
+Cargar mi lista de especies y seleccionar columna
+```{r}
+packages <- c("tidyverse", "here", "readxl", "insect", "eDNAfuns") 
+
+lapply(packages, library, character.only = TRUE)
+
+species_df <- read_excel(here("data/Cabañeros lista de especies.xlsx")) %>%
+  select(Genero_especie) %>%
+  filter(!is.na(Genero_especie)) %>%
+  mutate(Genero_especie = str_trim(Genero_especie))
+```
+
+Descargar en genebank mi lista de especies y su fasta de secuencias del mitogenoma completo
+```{r}
+species_queries <- species_df %>%
+  mutate(
+    query_mt = paste0(
+      Genero_especie,
+      "[ORGN]+AND+mitochondrion[TITL]+AND+complete[TITL]"
+    )
+  )
+
+search_safe <- function(q){
+
+  tryCatch(
+
+    insect::searchGB(
+      query = URLencode(q),
+      taxIDs = TRUE,
+      sequences = TRUE,
+      prompt = FALSE
+    ),
+
+    error = function(e) NULL,
+    warning = function(w) NULL
+
+  )
+
+}
+
+Search <- purrr::map(species_queries$query_mt, search_safe)
+
+names(Search) <- species_queries$Genero_especie
+
+species_queries$mitogenomes <- Search
+
+## A first thing to check is if the missing ones are missing from the db or renamed/misspelled
+
+## Options to explore: see if we can query gb using the taxID - will be spelling proof. 
+## Check manually in ncbi taxonomy the missing ones
+
+```
+
+Guardar los resultados
+```{r}
+dir.create(
+  here("data", "mitochondrion_fasta"),
+  showWarnings = FALSE
+)
+
+for(i in seq_along(Search)){
+
+  if(is.null(Search[[i]]))
+    next
+
+  writeFASTA(
+    Search[[i]],
+    file = here(
+      "data",
+      "mitochondrion_fasta",
+      paste0(
+        gsub(" ", "_", species_queries$Genero_especie[i]),
+        ".fasta"
+      )
+    )
+  )
+
+}
+
+```
+
+Definis mis primers (solo uso forward por si en genebank la r no la uploaded)
+```{r}
+MiFish <-	"GTCGGTAAAACTCGTGCCAGC"
+MiMammal <- "GGGTTGGTAAATTTCGTGCCAGC"
+F12SV5 <-	"TAGAACAGGCTCCTCTAG"
+MarVer1 <- "CGTGCCAGCCACCGCG"
+MarVer3 <-	"AGACGAGAAGACCCTRTG"
+```
+
+PCR virtual 
+```{r}
+virtual_pcr <- tibble(
+  species = species,
+  mito = Search
+) %>%
+  mutate(
+    pcr = map(
+      mito,
+      ~tryCatch(
+        virtualPCR(.x,
+                   up = MiMammal),
+        error = function(e) NULL
+      )
+    )
+  )
+
+
+sum(map_lgl(virtual_pcr$pcr, ~inherits(.x, "DNAbin")))
+
+```
+Ver cuales han sido amplificadas y cuales no
+```{r}
+virtual_pcr %>%
+  mutate(
+    amplified = map_lgl(pcr, ~inherits(.x, "DNAbin"))
+  ) %>%
+  filter(amplified)
+
+
+virtual_pcr %>%
+  mutate(
+    amplified = map_lgl(pcr, ~inherits(.x, "DNAbin"))
+  ) %>%
+  filter(!amplified)
+```
+
+Ver si mis especies de interes han sido amplificadas 
+
+```{r}
+species_check <- c(
+  "Bison bison",
+  "Lutra lutra",
+  "Calonectris diomedea",
+  "Hydrobates pelagicus"
+)
+
+
+virtual_pcr %>%
+  filter(species %in% species_check) %>%
+  mutate(
+    amplified = map_chr(pcr, ~class(.x)[1])
+  ) %>%
+  select(species, amplified)
+```
+
+Hacerlo con todos los primers a la vez
+```{r}
+primers <- tibble(
+  primer = c("MiFish", "MiMammal", "12SV5", "MarVer1", "MarVer3"),
+  sequence = c(
+    "GTCGGTAAAACTCGTGCCAGC",
+    "GGGTTGGTAAATTTCGTGCCAGC",
+    "TAGAACAGGCTCCTCTAG",
+    "CGTGCCAGCCACCGCG",
+    "AGACGAGAAGACCCTRTG"
+  )
+)
+
+virtual_pcr_results <-
+  crossing(
+    tibble(
+      species = species,
+      mito = Search
+    ),
+    primers
+  ) %>%
+  mutate(
+    pcr = map2(
+      mito,
+      sequence,
+      ~tryCatch(
+        virtualPCR(.x, up = .y),
+        error = function(e) NULL
+      )
+    ),
+    amplified = map_lgl(pcr, ~inherits(.x, "DNAbin"))
+  )
+```
+
+Analizar que amplifica cada primer
+```{r}
+summary_pcr <- virtual_pcr_results %>%
+  group_by(primer) %>%
+  summarise(
+    species_with_mitogenome = sum(!map_lgl(mito, is.null)),
+    amplified = sum(amplified),
+    percent = round(100 * amplified / species_with_mitogenome, 1)
+  )
+
+summary_pcr
+
+virtual_pcr_results %>%
+  filter(amplified) %>%
+  select(primer, species)
+```
+
+Check the 48 species missing species
+```{r}
+missing_species <- species_queries %>%
+  mutate(found = map_lgl(Search, ~inherits(.x, "DNAbin"))) %>%
+  filter(!found)
+```
+
+Now I am doing the new propmt for all of them so I am not missing any information - the goal is to later create a fasta with Labels (include the taxaid) and the sequence
+
+```{r}
+species_queries_mt <- species_df %>%
+  mutate(
+    query_mt = paste0(
+      Genero_especie,
+      "[ORGN]+AND+mitochondrial[TITL]"
+    )
+  )
+
+Search_mt <- purrr::map(
+  species_queries_mt$query_mt,
+  search_safe
+)
+
+sum(map_lgl(Search_mt, ~inherits(.x, "DNAbin")))
+
+```
+
+Combinar los resultados de este prompt con los de mitochondrion
+```{r}
+Search_combined <- map2(Search, Search_mt, function(x, y){
+
+  if(is.null(x) & is.null(y)) return(NULL)
+
+  if(is.null(x)) return(y)
+
+  if(is.null(y)) return(x)
+
+  c(x, y)
+
+})
+
+Search_combined <- map(Search_combined, function(x){
+
+  if(is.null(x)) return(NULL)
+
+  x[!duplicated(names(x))]
+
+})
+
+sum(map_lgl(Search_combined, ~inherits(.x, "DNAbin")))
+```
+
+```{r}
+names(Search_combined) #Lista de nombres de mis species
+
+```
+
+
+List of species that do not have sequence
+```{r}
+tibble(
+  species = species_df$Genero_especie,
+  found = map_lgl(Search_combined, ~inherits(.x, "DNAbin"))
+) %>%
+  filter(!found)
+```
+
+
+PCR virtual if i do it here with all primers instead than in meg
+```{r}
+primers <- tibble(
+  primer = c("MiFish", "MiMammal", "12SV5", "MarVer1", "MarVer3"),
+  sequence = c(
+    "GTCGGTAAAACTCGTGCCAGC",
+    "GGGTTGGTAAATTTCGTGCCAGC",
+    "TAGAACAGGCTCCTCTAG",
+    "CGTGCCAGCCACCGCG",
+    "AGACGAGAAGACCCTRTG"
+  )
+)
+
+virtual_pcr_results <-
+  crossing(
+    tibble(
+      species = species,
+      mito = Search_combined
+    ),
+    primers
+  ) %>%
+  mutate(
+    pcr = map2(
+      mito,
+      sequence,
+      ~tryCatch(
+        virtualPCR(.x, up = .y),
+        error = function(e) NULL
+      )
+    ),
+    amplified = map_lgl(pcr, ~inherits(.x, "DNAbin"))
+  )
+
+
+summary_pcr <- virtual_pcr_results %>%
+  group_by(primer) %>%
+  summarise(
+    species_with_mitogenome = sum(!map_lgl(mito, is.null)),
+    amplified = sum(amplified),
+    percent = round(100 * amplified / species_with_mitogenome, 1)
+  )
+
+```
+
+Cosas a concluir:
+- De qué especies no hay nada (99-73): revisar si han cambiado de species name y debemos buscar sinonimos
+- De qué especies no hay nada porque nadie ha secuenciado nada - ver si hay bancos de tejido o colecciones de las que obtener ADN. (Puede que algunas de las 99-73, puede que otras de las 99-63)
+- ver si las secuencias para un solo marcador son distintas para las espcies - alineamientos, blast (geneious)
+
+## Como combinar muchos fastas con el paquete de Moncho
+
+```{r}
+library(eDNAfuns)
+
+library(here)
+
+## all files I want to combine are in the same folder
+## The header of each sequence contains the taxid
+## Despite that I want the species name spelled out in the header
+
+all_gb_taxa %>% 
+  write_tsv(here("dbs/gb_taxid.tsv"))
+
+all_gb_taxa <- read_tsv(
+  here("dbs", "gb_taxid.tsv"),
+  show_col_types = FALSE
+)
+
+all_gb_taxa %>% filter (str_detect(name, "Bufo bufo"))
+#o inner join con mi tabla y la q busco y al tener dos tablas te quedas con taxaid y nombre y unir genrero especie 
+```
+
+entrez
+rentrez
+buscar taxaid de las especies q me preocupa y poner el taxaid en una columna en mi tabla 
+
+
+Voy a corregir manualmente las que corresponden a nombres que NCBI que no reconoce exactamente
+
+```{r}
+species_df <- species_df %>%
+  mutate(
+    Genero_especie = case_when(
+      Genero_especie == "Anas clypeata" ~ "Spatula clypeata",
+      Genero_especie == "Capreolus capreolus canus" ~ "Capreolus capreolus",
+      Genero_especie == "Vulpes vulpes silacea" ~ "Vulpes vulpes",
+      Genero_especie == "Felis silvestris tartessia" ~ "Felis silvestris",
+      Genero_especie == "Martes foina mediterranea" ~ "Martes foina",
+      Genero_especie == "Meles meles marianensis" ~ "Meles meles",
+      Genero_especie == "Mustela putorius aureolus" ~ "Mustela putorius",
+      TRUE ~ Genero_especie
+    )
+  )
+```
+
+Añadir el taxaid en mi lista de especies y crear un nuevo prompt usando el taxaid por si hay misspelings 
+```{r}
+species_df_taxid <- species_df %>%
+  left_join(
+    all_gb_taxa %>%
+      filter(rank == "species") %>%     # solo especies
+      select(name, taxID),
+    by = c("Genero_especie" = "name")
+  )
+
+species_df_taxid %>%
+  filter(is.na(taxID))
+```
+Voy a buscar los sinonimos y nuevos nombres de las especies que siguen sin taxaid
+```{r}
+# Especies sin TaxID
+missing_species <- species_df_taxid %>%
+  filter(is.na(taxID))
+
+# Buscar el TaxID en NCBI
+resolved_taxa <- missing_species %>%
+  mutate(
+    ncbi = purrr::map(
+      Genero_especie,
+      function(x) taxize::get_uid(x, messages = FALSE)
+    ),
+    taxID = purrr::map_chr(
+      ncbi,
+      function(x) {
+        if (length(x) == 0) {
+          NA_character_
+        } else {
+          as.character(x)
+        }
+      }
+    ),
+    taxID = as.integer(taxID)
+  )
+# Añadir los nuevos TaxID a la tabla original
+species_df_taxid <- species_df_taxid %>%
+  left_join(
+    resolved_taxa %>%
+      select(Genero_especie, taxID_new = taxID),
+    by = "Genero_especie"
+  ) %>%
+  mutate(
+    taxID = coalesce(taxID, taxID_new)
+  ) %>%
+  select(-taxID_new)
+
+# Ver las especies que siguen sin TaxID
+species_df_taxid %>%
+  filter(is.na(taxID))
+```
+
+
+Ahora que todas tienen taxaid voy a hacer un nuevo prompt
+```{r}
+species_df_taxid <- species_df_taxid %>%
+  mutate(
+    query_txid = paste0(
+      "txid",
+      taxID,
+      "[Organism:exp] AND mitochondrion")
+  )
+
+Search_taxid <- purrr::map(
+  species_df_taxid$query_txid,
+  search_safe
+)
+
+sum(map_lgl(Search_taxid, ~inherits(.x, "DNAbin")))
+```
+
+El modo más eficaz de buscar primers en una sequencia es uniendo todos los inputs en un único fasta, y que busque todos los primers en ese archivo
+
+Podemos pasar la info de la especie de la que viene la secuencia al fasta header, combinar todas las secuencias en un único objeto DNAbin, y escribir el fasta con eso
+```{r}
+# Remove NULL elements first
+seq_list <- Search_taxid[!sapply(Search_taxid, is.null)]
+
+# Combine into a single DNAbin object
+combined <- do.call(c, seq_list)
+
+combined|> insect::writeFASTA(here("data/all_sequences.fa"))
+```
+
+en terminal hacer cutadapt con f y r 
+
+
+
+
+```{r}
+#other prompt
+species_taxid_mt <- species_df_taxid %>%
+  mutate(
+    query_txid_mt = paste0(
+      Genero_especie,
+      "[ORGN]+AND+mitochondrial[TITL]"
+    )
+  )
+
+Search_taxaid_mt <- purrr::map(
+  species_taxid_mt$query_txid_mt,
+  search_safe
+)
+
+sum(map_lgl(Search_taxid, ~inherits(.x, "DNAbin")))
+```
+
+
+Virtual pcr
+```{r}
+primers <- tibble(
+  primer = c("MiFish", "MiMammal", "12SV5", "MarVer1", "MarVer3"),
+  sequence = c(
+    "GTCGGTAAAACTCGTGCCAGC",
+    "GGGTTGGTAAATTTCGTGCCAGC",
+    "TAGAACAGGCTCCTCTAG",
+    "CGTGCCAGCCACCGCG",
+    "AGACGAGAAGACCCTRTG"
+  )
+)
+```
+
+Version por si tenemos todos los inputs en un único fasta
+
+sacar taxaid de los nombres de las secuencias donde ha encontrado 
+
+```{r}
+primers %>% 
+  mutate(pcr = map(sequence, ~tryCatch(
+        virtualPCR(combined, up = .x),
+        error=function(e) NULL
+                   )))-> primers_with_data
+```
+
+```{r}
+virtual_pcr_taxid <-
+  crossing(
+    tibble(
+      species = species_df_taxid$Genero_especie,
+      mito = Search_taxid
+    ),
+    primers
+  ) %>%
+  mutate(
+    pcr = map2(
+      mito,
+      sequence,
+      ~tryCatch(
+        virtualPCR(.x, up = .y),
+        error = function(e) NULL
+      )
+    ),
+    amplified = map_lgl(pcr, ~inherits(.x, "DNAbin"))
+  )
+
+
+summary_pcr <- virtual_pcr_taxid %>%
+  group_by(primer) %>%
+  summarise(
+    species_with_mitogenome = sum(!map_lgl(mito, is.null)),
+    amplified = sum(amplified),
+    percent = round(100 * amplified / species_with_mitogenome, 1)
+  )
+
+```
+
+

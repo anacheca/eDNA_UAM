@@ -1,0 +1,203 @@
+---
+title: "Vertebrate primers on full mitogenomes"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library(eDNAfuns)
+library(tidyverse)
+library(here)
+library(stringdist)
+```
+
+
+## Starting point 
+
+```{r}
+lens <-read_delim(here("data/lengths.txt"), delim = " ", col_names = c("file", "lens")) |> 
+  mutate(file = basename(file))
+
+lens |> 
+  group_by(file) |> tally(sort=T)
+```
+
+```{r}
+lens |> 
+   group_by(file) |> add_tally(sort=T) |> 
+  filter (n>100) |> 
+  mutate (file = str_remove(file, "Locus_")) |> 
+  ggplot(aes(x= file, y = lens))+
+  geom_boxplot()
+```
+
+
+```{r}
+lens |> filter (file != "mitogenomes.fa") |> 
+   group_by(file) |> add_tally(sort=T) |> 
+  filter (n>100) |> 
+  mutate (file = str_remove(file, "Locus_")) |> 
+  ggplot(aes(x= file, y = lens))+
+  geom_boxplot()+
+  scale_y_continuous(limits = c(0,500))
+```
+
+For mitogenomes, get starting coverage per family
+
+```{r}
+seqs_to_remove <- ("PX120486")
+fasta_reader(here("data/mitogenomes.fa")) |> 
+  filter (!str_detect(header,seqs_to_remove )) |> 
+  
+  mutate(len = str_length(seq)) |> 
+  select(header, len) |> 
+  separate (header, into = c("seqID", "taxid", "taxonomy"), sep = "\\|") ->mitodata
+
+mitodata |>  
+  group_by(taxonomy ) |> 
+  tally() -> starting_point
+```
+
+List good outputs
+
+```{r}
+Outputs <- tibble (files= list.files(here("data"), pattern= "Locus*")) |> 
+  mutate(fasta= map(files, ~fasta_reader(here("data", .x))))
+```
+
+There are unverified sequences that screw this analysis
+
+```{r}
+
+
+Outputs |> 
+  mutate(fasta= map(fasta, ~.x |> filter (!str_detect(header,seqs_to_remove )))) -> Outputs
+```
+
+```{r}
+Outputs |> 
+  mutate(nseq = map_dbl(fasta, nrow)) |> 
+  filter (nseq>100) |> 
+  mutate(len= map(fasta, ~.x |> 
+                     mutate(len = str_length(seq)) |> 
+                    select(header, len) |> 
+  separate (header, into = c("seqID", "taxid", "taxonomy"), sep = "\\|"))) -> Outputs
+
+
+Outputs |> 
+  select(files,len) |> 
+  unnest(len) |> 
+  group_by(files, taxonomy) |> 
+  tally()
+```
+
+Let's check Mustelidae
+
+```{r}
+Outputs |> 
+  select(files,len) |> 
+  unnest(len) |> 
+  group_by(files, taxonomy) |> 
+  tally() |> 
+  pivot_wider(names_from = files, values_from = n) |> 
+  right_join(starting_point) |> 
+  mutate(across(.fns =~.x/n, .cols= starts_with("Locus"))) |> 
+  filter (str_starts(taxonomy,"Mustelidae")) |> 
+  select(-n) |> 
+  pivot_longer(-taxonomy,
+               names_to = "Locus",
+               
+               values_to = "prop") |> 
+  mutate(Locus =str_remove(Locus, "Locus_")) |> 
+  ggplot(aes(x= Locus, y = prop))+
+  geom_boxplot()
+```
+All primers work very well across mustelids - do they on american vison?
+
+```{r}
+Outputs |> 
+  select(files,len) |> 
+  unnest(len) |> 
+  group_by(files, taxonomy) |> 
+  tally() |> 
+  pivot_wider(names_from = files, values_from = n) |> 
+   filter (str_detect(taxonomy,"vison")) |> 
+  inner_join(starting_point) |> 
+  mutate(across(.fns =~.x/n, .cols= starts_with("Locus"))) 
+ 
+```
+
+Yes - how different is the NeoGale vison sequence from the other mustelids
+
+```{r}
+Outputs |> 
+  mutate(fasta = map(fasta, ~.x |>
+                       filter (str_detect(header, "Mustelidae")) |> 
+                       separate (header, into = c("seqID", "taxid", "taxonomy"), sep = "\\|") |> 
+                       select(taxid, taxonomy, seq))) |> 
+  select(files, fasta) -> mustelid_comparison
+
+mustelid_comparison |> 
+  mutate(Neogale_vison= map(fasta, ~.x |> 
+                              filter(str_detect(taxonomy,"Neogale vison")) |> 
+                              distinct(seq)  |> 
+                              rename(target_seq = seq))) |> 
+  mutate(fasta = map(fasta, ~.x |> 
+                       distinct(taxid,taxonomy, seq))) -> mustelid_comparison
+  mustelid_comparison |> 
+    unnest(Neogale_vison) |> 
+    unnest(fasta) |> 
+  mutate(levenshtein_dist = stringdist(seq, target_seq, method = "lv"))-> distances_to_Vison
+```
+Visualization
+```{r}
+
+locus_labels <- distances_to_Vison |> 
+  mutate(len = str_length(seq),
+         locus = str_remove(files, "Locus_"),
+          locus = str_remove(locus, ".fa"),
+          locus = fct_reorder(locus, len, .fun= mean)) |> 
+  
+  group_by(locus) %>%
+  summarise(mean_len = round(mean(len))) %>%
+  mutate(label = paste0(locus, " (", mean_len, " bp)")) %>%
+  { setNames(.$label, .$locus) }
+
+
+distances_to_Vison |> 
+  mutate(len = str_length(seq)) |> 
+  separate(taxonomy, into= c("family", "genus", "species"), sep = ";") |> 
+  mutate (case = case_when(species == "Neogale vison" ~ "Intraespecific",
+                           genus   == "Neogale"       ~ "Genus",
+                           TRUE                       ~ "family"),
+          locus = str_remove(files, "Locus_"),
+          locus = str_remove(locus, ".fa"),
+          locus = fct_reorder(locus, len, .fun= mean)) |> 
+  ggplot (aes(x= case, y  = levenshtein_dist))+
+  geom_boxplot(aes(fill= case))+
+  facet_wrap(~locus, labeller = labeller(locus = locus_labels))
+```
+Hay algo raro con las secuencias de visones americanos -> fasta
+
+```{r}
+Outputs |> 
+  select(files,fasta) |> 
+  unnest() |> 
+  filter(str_detect(header,"Neogale vison")) |> 
+  separate(header, into= c("SeqID", "taxid", "taxonomy"), sep = "\\|") |> 
+  group_by(files, taxonomy, taxid, seq) |> 
+  summarise(SeqID=paste(SeqID, collapse = "|")) |> 
+  unite(SeqID, taxid, taxonomy, col= "header", sep = ";") |> 
+  group_by(files) |> 
+  nest() |> 
+  mutate(file= map2(files, data,
+                    ~ fasta_writer(.y,
+                                   header= header,
+                                   sequence = seq,
+                                   file.out = here("data", "N_vison", .x))))
+  
+```
+

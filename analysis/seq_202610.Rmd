@@ -1,0 +1,100 @@
+
+Hemos recibido la sequencias Moncho se las ha descargado y me las comparte por google
+
+Primero creamos el archivo de 202610_metadata.csv y ponemos en data ese archivo, parametros y los archivos que nos han mandado.
+
+
+Aqui estoy cambiando el nombre de la columna metadata.csv para que sea igual que mis archivos
+
+```{r}
+library(tidyverse)
+library(here)
+library(eDNAfuns)
+library(googlesheets4)
+library(stringr)
+
+
+metadata <- read_csv(here("data", "raw_data_tfg", "metadata.csv"))
+
+metadata <- metadata %>%
+  mutate(
+    file1 = str_replace(file1, "_sub.fq", ".fq.gz"),
+    file2 = str_replace(file2, "_sub.fq", ".fq.gz")
+  ) 
+
+write_csv(metadata, here("data", "raw_data_tfg", "metadata_modificado.csv"))
+```
+Para mover los archivos a raw_data_tfg para tener todo junto (estaban en su carpeta y era dificil)
+
+(base) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/MEDITS_practise/data/raw_data_tfg/delivery_2026063014201300000463/BMK260521-CT734-ZX01-0101/BMK_DATA_20260630142013_1/Data/rawdata$ mv *.fq.gz ../../../../../
+
+Cambiamos params_COI.sh* input (PARENT_DIR="/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg/raw_data_tfg), output (OUTPUT_DIRECTORY="/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg/pipeline_output_tfg") y metadata (SEQUENCING_METADATA="${PARENT_DIR}"/metadata_modificado.csv). Los nuevos paths son de local data
+
+se activa cutadaptenv conda activate cutadaptenv
+
+Como no se puede trabajar en One drive en terminal por el espacio se copia todo a Local
+(cutadaptenv) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/MEDITS_practise/data$ cp -r raw_da
+ta_tfg /mnt/c/Users/AM.5074073/Local_data
+
+Si el pipeline no funciona por terminar en windows en r
+(cutadaptenv) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg$ dos2unix raw_data_tfg/params_COI.sh
+dos2unix: converting file raw_data_tfg/params_COI.sh to Unix format...
+
+Ahora si se corre
+bash /home/anacheca/Software/Pipeline_CS_tags/run_pipeline.sh raw_data_tfg/params_COI.sh
+
+Ahora para el script the uoise cambiar lo mismo y tambien añadir ALREADY_DEMULTIPLEXED="YES"
+DEMULT_OUTPUT="/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg/pipeline_output_tfg/demultiplexed_20260702_1108"
+
+y correr desde Local_data
+(cutadaptenv) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg$ bash /home/anacheca/Software/Pipeline_CS_tags/run_pipeline.sh raw_data_tfg/params_COI_unoise.sh 
+
+
+Despues de dad2 y vsearh 
+```{r}
+library(tidyverse)
+library(eDNAfuns)
+
+```
+
+```{r}
+target <- "C:/Users/AM.5074073/Local_data/Metabarcoding_tfg/pipeline_output_tfg/"
+```
+
+List all ASV tables and Hash keys
+
+```{r}
+outputs <- list.dirs(target, recursive = F)
+names(outputs) <- c("Dada2", "Vsearch")
+
+outputs %>% 
+  map(~list.files(path = .x, pattern="ASV_table.csv", full.names = T) %>% 
+        read_csv() %>% 
+        summarise(nHashes= n_distinct(Hash),
+                  nr     = sum(nReads))) %>% 
+  bind_rows(.id="clustering") -> noswarm
+
+outputs %>% 
+  map(~list.files(path = .x, pattern="new_ASV*", full.names = T) %>% 
+        read_csv() %>% 
+        summarise(nHashes= n_distinct(Hash),
+                  nr     = sum(nReads))) %>% 
+  bind_rows(.id="clustering") -> swarm
+
+bind_rows(swarm %>% mutate(secondary_clustering= "swarm"),
+          noswarm %>% mutate(secondary_clustering= "no swarm"))
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

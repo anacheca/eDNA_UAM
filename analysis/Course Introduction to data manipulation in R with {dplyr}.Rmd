@@ -1,0 +1,221 @@
+---
+title: "Course Introduction to data manipulation in R with {dplyr}"
+output: html_document
+date: "2026-07-27"
+---
+```{r}
+library(palmerpenguins)
+library(dplyr)
+```
+
+
+```{r}
+dat <- penguins
+
+str(dat) # structure of the data
+head(dat) # display first 6 rows
+summary(dat) # summary
+
+# filter observations based on a quantitative variable
+filter(dat, body_mass_g > 4000)
+# filter observations based on a qualitative variable
+filter(dat, sex == "female")
+# filter observations based on 2 cumulative conditions
+filter(dat, body_mass_g > 4000 & sex == "female")
+
+# filter observations based on a quantitative variable
+dat |>
+  filter(body_mass_g > 4000)
+# filter observations based on a qualitative variable
+dat |>
+  filter(sex == "female")
+# filter observations based on 2 cumulative conditions
+dat |>
+  filter(body_mass_g > 4000 & sex == "female")
+
+# extract rows 2, 5 and 37
+dat |>
+  slice(c(2, 5, 37))
+# extract first 3 rows
+dat |>
+  slice_head(n = 3)
+# extract last 3 rows
+dat |>
+  slice_tail(n = 3)
+
+# extract observations with 25% lowest body mass
+dat |>
+  slice_min(body_mass_g, prop = 0.25)
+# extract observations with 25% highest body mass
+dat |>
+  slice_max(body_mass_g, prop = 0.25)
+
+# random sample of 3 rows
+dat |>
+  sample_n(size = 3) #or n = instead of size
+## 3 Gentoo           4500 female  2007
+# random sample of half of the rows
+dat |>
+  sample_frac(size = 1 / 2) #or prop = instead of size
+
+# sort observations based on body mass (ascending order)
+dat |>
+  arrange(body_mass_g)
+# sort observations based on body mass (descending order)
+dat |>
+  arrange(desc(body_mass_g))
+
+# sort observations based on two variables - instead of filter
+dat |>
+  arrange(sex, body_mass_g)
+
+# select variables by their positions
+dat |>
+  select(c(2, 4))
+# select variables by their names
+dat |>
+  select(body_mass_g, year)
+# remove variables by their positions
+dat |>
+  select(-c(2, 4))
+# remove variables by their names
+dat |>
+  select(-c(body_mass_g, year))
+
+# select all variables from species to sex
+dat |>
+  select(species:sex)
+# put sex as first column, then all the others
+dat |>
+  select(sex, species:year)
+
+#only for species with no NA in sex
+dat |>
+  filter(!is.na(sex)) |>
+  select(body_mass_g, sex)
+
+# rename variables
+dat |>
+  rename(
+    body_mass = body_mass_g, # rename body_mass_g into body_mass
+    study_year = year # rename year into study_year
+  )
+
+# create a new variable based on an existing one
+dat |>
+  mutate(
+    body_mass_kg = body_mass_g / 1000
+  )
+# create a new variable from a vector of your choice
+dat |>
+  mutate(
+    ID = 1:nrow(dat)
+  )
+
+# compute mean and sd of body mass
+dat |>
+  summarize(
+    body_mass_mean = mean(body_mass_g, na.rm = TRUE),
+    body_mass_sd = sd(body_mass_g, na.rm = TRUE)
+  )
+
+# find the distinct species
+dat |>
+  distinct(species)
+# combination of distinct species and year
+dat |>
+  distinct(species, year)
+
+# compute mean and sd of body mass by species
+dat |>
+  group_by(species) |> # group by species
+  summarize(
+    mean = mean(body_mass_g, na.rm = TRUE), # compute mean
+    sd = sd(body_mass_g, na.rm = TRUE) # compute sd
+  )
+
+# compute mean and sd of body mass by species and sex
+dat |>
+  group_by(species, sex) |> # group by species and sex
+  summarize(
+    mean = mean(body_mass_g, na.rm = TRUE), # compute mean
+    sd = sd(body_mass_g, na.rm = TRUE) # compute sd
+  )
+
+
+# number of observations
+dat |>
+  summarize(n_obs = n())
+#or 
+# number of observations
+dat |>
+  count()
+# number of observations by species
+dat |>
+  count(species)
+
+# number of distinct species
+dat |>
+  summarize(n_species = n_distinct(species))
+# number of distinct species
+dat |>
+  summarize(n_distinct(species))
+# number of distinct species and year of study
+dat |>
+  summarize(n_species_year = n_distinct(species, year))
+
+# first value of the variable sex
+dat |>
+  summarize(first(sex))
+# last value of the variable sex
+dat |>
+  summarize(last(sex))
+# 37th value of the variable sex
+dat |>
+  summarize(nth(sex, n = 37))
+
+# if else
+dat |>
+  mutate(
+    body_mass_cat = if_else(body_mass_g >= 4000, # condition
+      "High", # output if condition is true
+      "Low" # output if condition is false
+    )
+  )
+# nested if else
+# case when, without a default option
+dat |>
+  mutate(
+    body_mass_cat = case_when(
+      body_mass_g < 3500 ~ "Low",
+      body_mass_g >= 3500 & body_mass_g <= 4750 ~ "Medium",
+      body_mass_g > 4750 ~ "High"
+    )
+  )
+# case when, with a default option
+dat |>
+  mutate(
+    body_mass_cat = case_when(
+      body_mass_g < 3500 ~ "Low",
+      body_mass_g > 4750 ~ "High",
+      .default = "Medium" # default output
+    )
+  )
+# case when, with a default option and missing values
+dat |>
+  mutate(
+    body_mass_cat = case_when(
+      body_mass_g < 3500 ~ "Low",
+      body_mass_g > 4750 ~ "High",
+      is.na(body_mass_g) ~ NA, # keep missing values as NA
+      .default = "Medium" # default output
+    )
+  )
+
+```
+GGPLOT COURSE
+```{r}
+library(ggthemes)
+
+```
+

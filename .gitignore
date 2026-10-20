@@ -1,0 +1,18 @@
+
+# Archivos temporales de R
+
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+
+# Carpeta Data y dbs (mantener la carpeta, ignorar su contenido)
+data/*
+dbs
+data/mitogenomes.fa
+data/seq_202610
+
+.RDataTmp
+eDNA_UAM.Rproj
