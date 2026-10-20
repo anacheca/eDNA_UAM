@@ -1,4 +1,4 @@
----
+rm ---
 title: "Vertebrate primers on full mitogenomes"
 output: html_notebook
 ---
@@ -200,4 +200,3 @@ Outputs |>
                                    file.out = here("data", "N_vison", .x))))
   
 ```
-

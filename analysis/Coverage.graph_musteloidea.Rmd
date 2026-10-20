@@ -331,4 +331,3 @@ wrap_plots(plots,ncol = 1,guides = "collect") &
 
 ggsave(filename = here("Manuscript", "All.coveragev2.png"), height = 11, width = 21,dpi = 'retina')
 ```
-
