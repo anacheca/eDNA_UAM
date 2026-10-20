@@ -17,3 +17,5 @@ data/seq_202610
 
 .RDataTmp
 eDNA_UAM.Rproj
+
+analysis/*.html
