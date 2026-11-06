@@ -3,54 +3,154 @@ Hemos recibido la sequencias Moncho se las ha descargado y me las comparte por g
 
 Primero creamos el archivo de 202610_metadata.csv y ponemos en data ese archivo, parametros y los archivos que nos han mandado.
 
-
-Aqui estoy cambiando el nombre de la columna metadata.csv para que sea igual que mis archivos
-
 ```{r}
 library(tidyverse)
 library(here)
 library(eDNAfuns)
 library(googlesheets4)
 library(stringr)
+library(readxl)
+
+# Leer el archivo Excel
+data <- read_excel("~/eDNA_UAM/data/seq_202610/202610_metadata_combined.xlsx")
+
+# Guardarlo como CSV
+write.csv(data, here("data", "seq_202610", "202610_metadata_combined.csv"),
+          row.names = FALSE)
+
+# Archivo original de Illumina
+archivo <- "C:/Users/AM.5074073/OneDrive - UAM/Documentos/eDNA_UAM/data/seq_202610/X208SC26088993-Z01-F001.tar"
+
+# Carpeta donde guardar los datos descomprimidos
+destino <- "C:/Users/AM.5074073/OneDrive - UAM/Documentos/eDNA_UAM/data/seq_202610/IlluminaCS1_metabarcoding"
 
 
-metadata <- read_csv(here("data", "raw_data_tfg", "metadata.csv"))
-
-metadata <- metadata %>%
-  mutate(
-    file1 = str_replace(file1, "_sub.fq", ".fq.gz"),
-    file2 = str_replace(file2, "_sub.fq", ".fq.gz")
-  ) 
-
-write_csv(metadata, here("data", "raw_data_tfg", "metadata_modificado.csv"))
+untar(archivo, exdir = destino)
 ```
-Para mover los archivos a raw_data_tfg para tener todo junto (estaban en su carpeta y era dificil)
 
-(base) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/MEDITS_practise/data/raw_data_tfg/delivery_2026063014201300000463/BMK260521-CT734-ZX01-0101/BMK_DATA_20260630142013_1/Data/rawdata$ mv *.fq.gz ../../../../../
+Crear metadata
+```{r}
+#leer el archivo Excel original
+metadata <- here("data", "seq_202610", "202610_sequencing_database.xlsx")
 
-Cambiamos params_COI.sh* input (PARENT_DIR="/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg/raw_data_tfg), output (OUTPUT_DIRECTORY="/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg/pipeline_output_tfg") y metadata (SEQUENCING_METADATA="${PARENT_DIR}"/metadata_modificado.csv). Los nuevos paths son de local data
+datos <- read_excel(metadata, sheet = 3)
 
-se activa cutadaptenv conda activate cutadaptenv
+datos %>% 
+  mutate(seq_index_name_1= paste0(Well,"_CS1" ),
+         seq_index_name_2= paste0(Well,"_CS2" )) %>% 
+  rename (Sample=Sample_ID,
+          primerF_seq=PrimerF_seq,
+          primerR_seq=PrimerR_seq,
+          locus=Locus) ->datos
+```
 
-Como no se puede trabajar en One drive en terminal por el espacio se copia todo a Local
-(cutadaptenv) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/MEDITS_practise/data$ cp -r raw_da
-ta_tfg /mnt/c/Users/AM.5074073/Local_data
 
-Si el pipeline no funciona por terminar en windows en r
-(cutadaptenv) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg$ dos2unix raw_data_tfg/params_COI.sh
-dos2unix: converting file raw_data_tfg/params_COI.sh to Unix format...
+```{r}
+#rellenar los nombres de los archivos FASTQ
+datos$file1 <- "L2_MKDL260019001-1A_23NVTWLT4_L1_1.fq.gz"
+datos$file2 <- "L2_MKDL260019001-1A_23NVTWLT4_L1_2.fq.gz"
 
-Ahora si se corre
-bash /home/anacheca/Software/Pipeline_CS_tags/run_pipeline.sh raw_data_tfg/params_COI.sh
+#guardar como CSV en data/seq_202610/
+output <- here("data", "seq_202610", "metadata.csv")
 
-Ahora para el script the uoise cambiar lo mismo y tambien añadir ALREADY_DEMULTIPLEXED="YES"
-DEMULT_OUTPUT="/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg/pipeline_output_tfg/demultiplexed_20260702_1108"
+write_csv(
+  datos,
+  file = output
+)
 
-y correr desde Local_data
-(cutadaptenv) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/Local_data/Metabarcoding_tfg$ bash /home/anacheca/Software/Pipeline_CS_tags/run_pipeline.sh raw_data_tfg/params_COI_unoise.sh 
+```
+
+La pipeline da un error pq el nombre de la muestra esta repetido. Creo que es pq esta puesto el nombre de la botella de agua/filtro, y no de la replica de PCR
+
+```{r}
+datos %>% 
+  group_by(Sample) %>% 
+  nest() %>% 
+  mutate(data= map(data, ~.x %>% rownames_to_column("rep"))) %>% 
+  unnest() %>% 
+  unite(Sample, rep, col="Sample", sep="_rep") -> datos
+
+write_csv(
+  datos,
+  file = output
+)
+
+```
+Los primers de PCR no estaban bien metidos:
+
+```{r}
+datos %>% 
+  mutate(primerF_seq= "GGGTTGGTAAATTTCGTGCCAGC",
+         primerR_seq= "CATAGTGGGGTATCTAATCCCAGTTTG") -> datos
+
+write_csv(
+  datos,
+  file = output
+)
+```
+
+
+En terminal
+
+(acabamos teniendo en parques - lineages.txt (Midor)  output_illumina_rCRUX (cabañeros y aire vigo)  output_rCRUX (cs1 vigo agua y aire)  output_seq_202610 (cs1 vigo con midori) seq_202610 (1 step cs1 vigo y illumina_round 1 step)
+
+Primero copiar a Local data
+(base) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/eDNA_UAM/data$ cp -r seq_202610 /mnt/c/Users/AM.5074073/Local_data
+(base) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/eDNA_UAM/data$ cp params_* /mnt/c/Users/AM.5074073/Local_data/seq_202610
+
+En visual code cambiar los parametros a 
+PARENT_DIR="/mnt/c/Users/AM.5074073/Local_data/seq_202610"
+SEQUENCING_METADATA="${PARENT_DIR}"/metadata.csv
+OUTPUT_DIRECTORY="/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/eDNA_UAM/data/seq_202610"
+si no funcionaa a "/mnt/c/Users/AM.5074073/Local_data/seq_202610/pipeline_output" y luego mover a one drive
+
+para deunise params lo mismo pero en demulotiplex poner "YES" DEMULT_OUTPUT="/mnt/c/Users/AM.5074073/Local_data/seq_202610/pipeline_output/demultiplexed_20261020_1504"
+
+mirar graficas y elegir con que output quedarnos
+
+
+### ver porque nos ha borrado tantas seqs
+
+```{r}
+pipeline_output <- "C:/Users/AM.5074073/Local_data/seq_202610/pipeline_output/demultiplexed_20261020_1411/"
+
+list.files(pipeline_output)
+
+demult <- list.files(path = file.path(pipeline_output, "demultiplexed"), full.names = T)
+
+demult[1:2] %>% map(fastq_reader, keepQ=T) %>%  map(~.x %>% mutate(len = str_length(seq)))-> pruebas
+
+noprimer <- list.files(path = file.path(pipeline_output, "noprimers"), full.names = T)
+
+noprimer[1:2] %>% map(fastq_reader, keepQ=T) %>%  map(~.x %>% mutate(len = str_length(seq)))-> pruebas2
+
+filtered <- list.files(path = file.path(pipeline_output, "filtered"), full.names = T)
+
+filtered %>% map(fastq_reader) %>%  map(~.x %>% mutate(len = str_length(seq)))-> pruebas3
+
+filtered_new <- list.files ("C:/Users/AM.5074073/Local_data/seq_202610/pipeline_output/demultiplexed_20261020_1504/filtered", full.names = T)
+
+filtered_new[1:2] %>% map(fastq_reader) %>%  map(~.x %>% mutate(len = str_length(seq)))-> pruebas4
+```
+
+Que tal unoise?
+
+Hace un cutadapt con los parametros de longitud de l1 y l2, lo que puede estar haciendo lo mismo que en DADA2
+Podemos quitarlo y ver si así mejora. De momento, miremos qué secuencias han salido
+```{r}
+hash <- read_csv("//wsl.localhost/Ubuntu/home/anacheca/Software/Pipeline_CS_tags/test/demultiplexed_20261020_1435/Hash_key.csv")
+
+#asumimos q AGCCGCGGT es bacteria
+hash %>% 
+  filter (!str_starts(sequence, "AGCCGCGGT"))
+```
+
+
+Deducimos que los primers (mymammal) se pegan con mas facilidad a las bacterias y perdemos gran parte de las secuencias en dada2 ya que reducimos en tamaño alrededor de 120/95 ya que el adn de bacteria es mas largo y nos quedamos con menos secuencias de adn corto. tambien miramos por que combinacion de bases empiezan las secuencias de bacterias para intentar filtrarlas haciendo blast
 
 
 Despues de dad2 y vsearh 
+Mover a ONE DRIVE pipeline_output
 ```{r}
 library(tidyverse)
 library(eDNAfuns)
@@ -58,7 +158,7 @@ library(eDNAfuns)
 ```
 
 ```{r}
-target <- "C:/Users/AM.5074073/Local_data/Metabarcoding_tfg/pipeline_output_tfg/"
+target <- "C:/Users/AM.5074073/Local_data/seq_202610/pipeline_output"
 ```
 
 List all ASV tables and Hash keys
@@ -83,18 +183,436 @@ outputs %>%
 
 bind_rows(swarm %>% mutate(secondary_clustering= "swarm"),
           noswarm %>% mutate(secondary_clustering= "no swarm"))
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+```{r}
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+outputs <- list.dirs(target, recursive = F)
+names(outputs) <- c("Dada2", "Vsearch")
+
+outputs %>% 
+  map(~list.files(path = .x, pattern="ASV_table.csv", full.names = T) %>% 
+        read_csv() %>% 
+        semi_join(LV_samples) %>% 
+        summarise(nHashes= n_distinct(Hash),
+                  nr     = sum(nReads))) %>% 
+  bind_rows(.id="clustering") -> noswarm
+
+outputs %>% 
+  map(~list.files(path = .x, pattern="new_ASV*", full.names = T) %>% 
+        read_csv() %>% 
+        semi_join(LV_samples) %>% 
+        summarise(nHashes= n_distinct(Hash),
+                  nr     = sum(nReads))) %>% 
+  bind_rows(.id="clustering") -> swarm
+
+bind_rows(swarm %>% mutate(secondary_clustering= "swarm"),
+          noswarm %>% mutate(secondary_clustering= "no swarm"))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+we select for vsearch
+```{r}
+outputs[2] %>%
+  map(~list.files(
+    path = .x,
+    pattern = "new_ASV*",
+    full.names = TRUE
+  ) %>%
+    map_dfr(read_csv)) %>%
+  bind_rows(.id = "clust") -> swarm_ASV
+
+
+outputs[2] %>%
+  map(~list.files(
+    path = .x,
+    pattern = "new_Hash_key_after_swarm.csv",
+    full.names = TRUE
+  ) %>%
+    map_dfr(read_csv)) %>%
+  bind_rows(.id = "clust") -> swarm_Hash
+
+swarm_Hash <- swarm_Hash %>%
+  semi_join(swarm_ASV, by = "Hash")
+
+
+swarm_Hash %>% 
+  fasta_writer(sequence = seq, header = Hash, file.out =here( "data/seq_202610/pipeline_output/VSEARCH_Hashes.fa"))
+```
+
+
+
+
+
+dividir 
+
+asegurarse q estas desde parques etc
+
+#MIDORI ROUND
+ana@megserver:~/parques$ sbatch --array=1-5 /home/ana/ccc_cluster_scripts/scripts/taxonomy/Step1_blast_array.sh /home/an
+a/parques/seq_202610/ /home/ana/parques/output_seq_202610/ Vert_12S
+Submitted batch job 153435
+ana@megserver:~/parques$ squeue
+             JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
+          153435_1    LocalQ blast_ar      ana  R       0:05      1 megserver
+          153435_2    LocalQ blast_ar      ana  R       0:05      1 megserver
+          153435_3    LocalQ blast_ar      ana  R       0:05      1 megserver
+          153435_4    LocalQ blast_ar      ana  R       0:05      1 megserver
+ana@megserver:~/parques$ squeue
+             JOBID PARTITION     NAME     USER ST       TIME  NODES NODELIST(REASON)
+ana@megserver:~/parques$ mv lineages.txt parques/output_seq_202610/
+mv: cannot stat 'lineages.txt': No such file or directory
+ana@megserver:~/parques$ ls
+output_seq_202610  seq_202610
+ana@megserver:~/parques$ cd output_seq_202610/
+ana@megserver:~/parques/output_seq_202610$ ls
+lineages.txt               split_part_0001.fasta.out  split_part_0003.fasta.out
+split_part_0000.fasta.out  split_part_0002.fasta.out  split_part_0004.fasta.out
+
+
+#WE DID A ROUND WITH RCRUX BUT THE TAXONOMIC LIST WASNT CORRECT
+#THE LAST BLAST 
+
+1 STEP
+ana@megserver:~/parques$ sbatch --array=1-5 /home/ana/ccc_cluster_scripts/scripts/taxonomy/Step1_blast_array.sh /home/an
+a/parques/seq_202610 /home/ana/parques/output_rCRUX/ 12S_rCRUX
+
+
+2 STEP
+sbatch --array=1-5 --export=ALL,OUT_FOLDER="/home/ana/parques/output_rCRUX",TAXONOMY_FILE="$BLA
+STDB/taxonomy_files_rCRUX/taxonomy_file_rCRUX.txt" /home/ana/ccc_cluster_scripts/scripts/taxonomy/Step2_taxonomy_array_r
+CRUX.sh
+
+SAVE TO ONE DRIVE AND PUT ALL FILES TOGETHER - THE FINAL VERSION WAS CALLED RCRUX NOT ALL 
+ana@megserver:~/parques$ cd output_rCRUX/
+ana@megserver:~/parques/output_rCRUX$ ls
+ids_threshold_100_99_97_95_90_split_part_0000.fasta.tsv  performance_split_part_0000.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0001.fasta.tsv  performance_split_part_0001.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0002.fasta.tsv  performance_split_part_0002.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0003.fasta.tsv  performance_split_part_0003.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0004.fasta.tsv  performance_split_part_0004.fasta.tsv
+max_pidents_split_part_0000.fasta.tsv                    split_part_0000.fasta.out
+max_pidents_split_part_0001.fasta.tsv                    split_part_0001.fasta.out
+max_pidents_split_part_0002.fasta.tsv                    split_part_0002.fasta.out
+max_pidents_split_part_0003.fasta.tsv                    split_part_0003.fasta.out
+max_pidents_split_part_0004.fasta.tsv                    split_part_0004.fasta.out
+ana@megserver:~/parques/output_rCRUX$ cat ids* > ids_threshold.all.fasta.tsv
+ana@megserver:~/parques/output_rCRUX$ ls
+ids_threshold_100_99_97_95_90_split_part_0000.fasta.tsv  performance_split_part_0000.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0001.fasta.tsv  performance_split_part_0001.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0002.fasta.tsv  performance_split_part_0002.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0003.fasta.tsv  performance_split_part_0003.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0004.fasta.tsv  performance_split_part_0004.fasta.tsv
+ids_threshold.all.fasta.tsv                              split_part_0000.fasta.out
+max_pidents_split_part_0000.fasta.tsv                    split_part_0001.fasta.out
+max_pidents_split_part_0001.fasta.tsv                    split_part_0002.fasta.out
+max_pidents_split_part_0002.fasta.tsv                    split_part_0003.fasta.out
+max_pidents_split_part_0003.fasta.tsv                    split_part_0004.fasta.out
+max_pidents_split_part_0004.fasta.tsv
+ana@megserver:~/parques/output_rCRUX$ cat max* > max_pidents_all.fasta.tsv
+ana@megserver:~/parques/output_rCRUX$ cat performance* > performance_all.fasta.tsv
+ana@megserver:~/parques/output_rCRUX$ ls
+ids_threshold_100_99_97_95_90_split_part_0000.fasta.tsv  performance_all.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0001.fasta.tsv  performance_split_part_0000.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0002.fasta.tsv  performance_split_part_0001.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0003.fasta.tsv  performance_split_part_0002.fasta.tsv
+ids_threshold_100_99_97_95_90_split_part_0004.fasta.tsv  performance_split_part_0003.fasta.tsv
+ids_threshold.all.fasta.tsv                              performance_split_part_0004.fasta.tsv
+max_pidents_all.fasta.tsv                                split_part_0000.fasta.out
+max_pidents_split_part_0000.fasta.tsv                    split_part_0001.fasta.out
+max_pidents_split_part_0001.fasta.tsv                    split_part_0002.fasta.out
+max_pidents_split_part_0002.fasta.tsv                    split_part_0003.fasta.out
+max_pidents_split_part_0003.fasta.tsv                    split_part_0004.fasta.out
+max_pidents_split_part_0004.fasta.tsv
+ana@megserver:~/parques/output_rCRUX$ pwd
+/home/ana/parques/output_rCRUX
+
+(base) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/eDNA_UAM/data/seq_202610/pipeline_output/blast_output$ scp ana@meg1.bio.uam.es:parques/output_rCRUX/*all.fasta.tsv .
+ana@meg1.bio.uam.es's password:
+ids_threshold.all.fasta.tsv                                                           100%  492KB   5.4MB/s   00:00
+max_pidents_all.fasta.tsv                                                             100%  234KB   6.7MB/s   00:00
+performance_all.fasta.tsv                                                             100%  223KB   5.6MB/s   00:00
+
+
+
+Hacemos lo mismo con los datos de demultiplex q hizo moncho de illumina - se guarda en local el output
+```{r}
+
+library(tidyverse)
+library(readr)
+library(eDNAfuns)
+
+target <- "C:/Users/AM.5074073/Local_data/seq_202610/demultiplexed_20261021_1216"
+
+swarm_ASV <- list.files(
+  path = target,
+  pattern = "^new_ASV.*\\.csv$",
+  full.names = TRUE
+) %>%
+  map_dfr(read_csv)
+
+swarm_Hash <- list.files(
+  path = target,
+  pattern = "^new_Hash_key_after_swarm\\.csv$",
+  full.names = TRUE
+) %>%
+  map_dfr(read_csv)
+
+swarm_Hash <- swarm_Hash %>%
+  semi_join(swarm_ASV, by = "Hash")
+
+fasta_writer(
+  df = swarm_Hash,
+  sequence = seq,
+  header = Hash,
+  file.out = file.path(target, "Hashes.fa")
+)
+
+```
+
+(base) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/Local_Data/seq_202610/demultiplexed_20261021_1216$ local2meg Hashes.fa
+
+ana@megserver:~/parques/seq_202610/illumina_round$ awk '/^>/{n++} {print > sprintf("split_part_%04d.fasta", int(n/4000))}' Hashes.fa
+
+mkdir illumina_round
+mkdir output_illumina_rCRUX
+
+step 1
+ana@megserver:~/parques/seq_202610/illumina_round$ sbatch --array=1 /home/ana/ccc_cluster_scripts/scripts/taxonomy/Step1
+_blast_array.sh /home/ana/parques/seq_202610/illumina_round /home/ana/parques/output_illumina_rCRUX/ 12S_rCRUX
+
+step 2
+ana@megserver:~/parques/output_illumina_rCRUX$ sbatch --array=1 --export=ALL,OUT_FOLDER="/home/ana/parques/output_illumina_rCRUX",TAXONOMY_FILE="$BLASTDB/taxonomy_files_rCRUX/taxonomy_file_rCRUX.txt" /home/ana/ccc_cluster_scripts/scripts/taxonomy/Step2_taxonomy_array_rCRUX.sh
+
+mover
+(base) anacheca@PDI-BIO-4214:/mnt/c/Users/AM.5074073/OneDrive - UAM/Documentos/eDNA_UAM/data/seq_202610/pipeline_output/blast_output$ scp ana@meg1.bio.uam.es:parques/output_illumina_rCRUX/*fasta.tsv .
+
+
+
+After metabarcoding and blast let´s study the sequences. Open the 3 files
+```{r}
+here()
+# Read the ASV table
+asv_tableV <- read_csv(here("data/seq_202610/pipeline_output/demultiplexed_20261021_1254/new_ASV_after_swarm.csv"))
+
+ids_tableV <- read_delim(here("data/seq_202610/pipeline_output/blast_output/ids_threshold.rCRUX.fasta.tsv"), delim = "\t"
+)
+
+metadataV <- read_csv(here("data/seq_202610/metadata.csv"))
+
+mergedV <- left_join(asv_tableV, ids_tableV, by = c("Hash" = "qseqid"))
+```
+
+create table
+```{r}
+#How many ASVa were assigned a taxaid
+sum(!is.na(mergedV$consensus))
+
+mergedV %>% 
+  group_by(is.na(consensus)) %>% 
+  summarise(nseqs = sum(nReads),
+            nHashes= n_distinct(Hash))
+
+mergedV %>%
+  filter(!is.na(consensus)) %>%
+  group_by(
+    Sample,
+    Taxa = consensus) %>% 
+  summarise(Reads = sum(nReads)
+  )-> species_tableV
+
+species_biol_tableV <- inner_join(species_tableV, metadataV)
+
+species_tableV %>% 
+  anti_join(metadataV)
+```
+
+To count how many samples each taxon appears in
+
+```{r}
+species_tableV |>
+  ungroup() |>
+  count(Taxa, sort = TRUE)
+```
+This returns one row for each unique taxon detected across all sample with >98 pdent
+
+```{r}
+mergedV |>
+  ungroup() |>
+  filter(max_pident > 98) |>
+  distinct(consensus) -> species_listV
+```
+
+Filtering species-level taxonomic assignments with >98% identity per sample
+```{r}
+species_table_98V <- mergedV %>%
+  ungroup() %>%
+  filter(
+    !is.na(consensus),
+    max_pident > 98
+  ) %>%
+  filter(
+    !grepl("NA$", consensus)
+  ) %>%
+  group_by(
+    Sample,
+    Taxa = consensus
+  ) %>%
+  summarise(.groups = "drop")
+```
+
+
+Let´s see why the kanguroo is in every sample - table with Biol_sample, taxa, nreads y nreps
+```{r}
+species_biol_summaryV <- species_tableV %>%
+  mutate(
+    Biol_sample = sub("_rep[123]$", "", Sample)
+  ) %>%
+  group_by(
+    Biol_sample,
+    Taxa
+  ) %>%
+  summarise(
+    nReads = sum(Reads, na.rm = TRUE),
+    nReps = n_distinct(Sample),
+    .groups = "drop"
+  ) %>%
+  select(Biol_sample, Taxa, nReads, nReps) %>%
+  arrange(Biol_sample, desc(nReads))
+```
+
+Filtering by species
+```{r}
+species_biol_summaryV <- species_tableV %>%
+  mutate(
+    Biol_sample = sub("_rep[123]$", "", Sample)
+  ) %>%
+  group_by(Biol_sample, Taxa) %>%
+  summarise(
+    nReads = sum(Reads, na.rm = TRUE),
+    nReps = n_distinct(Sample),
+    .groups = "drop"
+  ) %>%
+  distinct(Biol_sample, Taxa, .keep_all = TRUE) %>%
+  filter(str_detect(Taxa, "Macropodidae")) %>% View()
+```
+
+
+
+
+#################
+
+#################
+
+#################
+
+mirar genles del control negativo
+qbit de todo
+
+por cada ambiente, una charca 3 replicas ver el listado de especies, un comando q coja una tabla y haga una cosa 
+asv limpia la coge y te produce la tabla asiq antes se quitan todos los kanguros 
+
+
+### Illumina samples - Cabañeros and Vigo air
+```{r}
+here()
+# Read the ASV table
+asv_tableC <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/new_ASV_after_swarm.csv"))
+
+ids_tableC <- read_delim(here("data/seq_202610/pipeline_output/blast_output/ids_threshold_100_99_97_95_90_split_part_0000.fasta.tsv"), delim = "\t"
+)
+
+#Read and select the cabañeros metadata and change it so it matches with the sequence db
+metadata <- here("data", "seq_202610", "202610_sequencing_database.xlsx")
+datos <- read_excel(metadata, sheet = 2)
+
+metadataC <- datos %>%
+  mutate(Sample = str_replace(Sample, "_rep([123])$", "_R\\1"))
+
+mergedC <- left_join(asv_tableC, ids_tableC, by = c("Hash" = "qseqid"))
+```
+
+create table
+```{r}
+#How many ASVa were assigned a taxaid
+sum(!is.na(mergedC$consensus))
+
+mergedC %>% 
+  group_by(is.na(consensus)) %>% 
+  summarise(nseqs = sum(nReads),
+            nHashes= n_distinct(Hash))
+
+mergedC %>%
+  filter(!is.na(consensus)) %>%
+  group_by(
+    Sample,
+    Taxa = consensus) %>% 
+  summarise(Reads = sum(nReads)
+  )-> species_tableC
+
+species_biol_tableC <- inner_join(species_tableC, metadataC)
+
+species_tableC %>% 
+  anti_join(metadataC)
+```
+
+### Counting the occurrence of each taxon across samples
+
+```{r}
+species_tableC |>
+  ungroup() |>
+  count(Taxa, sort = TRUE)
+```
+This returns one row for each unique taxon detected across all samples.
+
+```{r}
+mergedC |>
+  ungroup() |>
+  filter(max_pident > 98) |>
+  distinct(consensus) -> species_listC
+
+species_listC <- mergedC |>
+  ungroup() |>
+  filter(max_pident > 98) |>
+  distinct(Sample, consensus)
+```
+
+Filtering species-level taxonomic assignments with >98% identity per sample
+```{r}
+species_table_98C <- mergedC %>%
+  ungroup() %>%
+  filter(
+    !is.na(consensus),
+    max_pident > 98
+  ) %>%
+  filter(
+    !grepl("NA$", consensus)
+  ) %>%
+  group_by(
+    Sample,
+    Taxa = consensus
+  ) %>%
+  summarise(.groups = "drop")
+```
+
+
+
+
+
+
+
+
+```{r}
+write.csv(
+  c,
+  "species_tableV.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  species_table_98C,
+  "species_tableC.csv",
+  row.names = FALSE
+)
+```
+
