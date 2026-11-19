@@ -1,0 +1,162 @@
+step 1
+sbatch --array=1-5 /home/ana/ccc_cluster_scripts/scripts/taxonomy/Step1_blast_array.sh /home/ana/parques/seq_202610 /home/ana/parques/output_seq_202610_midori MIDORI2_UNIQ_NUC_GB274_srRNA_BLAST
+
+step 2
+out_folder="/home/ana/parques/output_seq_202610_midori/"
+
+sbatch --array=1-5 --export=ALL,OUT_FOLDER="$out_folder" ~/ccc_cluster_scripts/scripts/taxonomy/Step2_taxonomy_array_MIDORI.sh
+
+
+mover
+
+cat ids* > ids_threshold.all.fasta.tsv
+
+desde "$PROJECTS"
+
+scp ana@meg1.bio.uam.es:parques/output_illumina_rCRUX/*fasta.tsv .C
+
+
+
+Preguntas
+
+  mutate(ID = case_when(ID == "CI0034A" ~ "CHS_2606_1",
+                        ID == "CI0034B" ~ "CHS_2606_1",
+                        str_detect(ID, "SABH_2605") ~ "CHS_2605_1"
+
+
+
+
+```{r}
+metadata_muestreo <- googlesheets4::read_sheet(
+  "1YBBJFffB0htU45nMEysNiTS86g61CE3xosvfnnOdy58"
+)
+```
+
+
+
+
+Illumina Cabañeros
+
+```{r}
+here()
+# Read the ASV table
+asv_tableC <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/new_ASV_after_swarm.csv"))
+
+ids_tableC <- read_delim(here("data/seq_202610/pipeline_output_midori/ids_threshold.midori.fasta.tsv"), delim = "\t"
+)
+
+metadataC <- read_csv(here("data/seq_202610/metadata.csv"))
+
+mergedC <- left_join(asv_tableV, ids_tableV, by = c("Hash" = "qseqid"))
+```
+
+create table
+```{r}
+#How many ASVa were assigned a taxaid
+sum(!is.na(mergedC$consensus))
+
+mergedC %>% 
+  group_by(is.na(consensus)) %>% 
+  summarise(nseqs = sum(nReads),
+            nHashes= n_distinct(Hash))
+
+mergedC %>%
+  filter(!is.na(consensus)) %>%
+  group_by(
+    Sample,
+    Taxa = consensus) %>% 
+  summarise(Reads = sum(nReads)
+  )-> species_tableC
+
+```
+
+To count how many samples each taxon appears in
+
+```{r}
+species_tableC |>
+  ungroup() |>
+  count(Taxa, sort = TRUE)
+```
+
+
+### Counting the occurrence of each taxon across samples
+
+```{r}
+species_tableC |>
+  ungroup() |>
+  count(Taxa, sort = TRUE)
+```
+This returns one row for each unique taxon detected across all samples.
+
+```{r}
+mergedC |>
+  ungroup() |>
+  filter(!is.na(consensus), !grepl("%NA$", consensus)) |>
+  distinct(Sample, consensus) -> species_listC
+
+```
+
+
+
+
+Join with metadata muestreo and hashes
+
+
+```{r}
+
+
+```
+
+
+
+###################
+
+
+CS1 VIGO
+
+
+###################
+
+
+
+
+After metabarcoding and blast let´s study the sequences. Open the 3 files
+```{r}
+here()
+# Read the ASV table
+asv_tableV <- read_csv(here("data/seq_202610/pipeline_output/demultiplexed_20261021_1254/new_ASV_after_swarm.csv"))
+
+ids_tableV <- read_delim(here("data/seq_202610/pipeline_output_midori/ids_threshold.midori.fasta.tsv"), delim = "\t"
+)
+
+metadataV <- read_csv(here("data/seq_202610/metadata.csv"))
+
+mergedV <- left_join(asv_tableV, ids_tableV, by = c("Hash" = "qseqid"))
+```
+
+create table
+```{r}
+#How many ASVa were assigned a taxaid
+sum(!is.na(mergedV$consensus))
+
+mergedV %>% 
+  group_by(is.na(consensus)) %>% 
+  summarise(nseqs = sum(nReads),
+            nHashes= n_distinct(Hash))
+
+mergedV %>%
+  filter(!is.na(consensus)) %>%
+  group_by(
+    Sample,
+    Taxa = consensus) %>% 
+  summarise(Reads = sum(nReads)
+  )-> species_tableV
+```
+
+To count how many samples each taxon appears in
+
+```{r}
+species_tableV |>
+  ungroup() |>
+  count(Taxa, sort = TRUE)
+```

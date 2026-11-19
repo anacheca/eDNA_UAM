@@ -1,0 +1,115 @@
+---
+title: "WTF"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(here)
+library(eDNAfuns)
+```
+
+```{r}
+ASV_good <- read_csv(here("data/seq_202610/pipeline_output/demultiplexed_20261021_1254/new_ASV_after_swarm.csv"))
+metadata <- read_csv(here("data/seq_202610/pipeline_output/demultiplexed_20261021_1254/metadata.csv"))
+IDS <- read_tsv (here("data/seq_202610/pipeline_output/blast_output/ids_threshold.rCRUX.fasta.tsv"))
+metadata_vigo <- googlesheets4::read_sheet(
+  "1YBBJFffB0htU45nMEysNiTS86g61CE3xosvfnnOdy58")
+```
+
+
+```{r}
+ASV_good |> 
+  inner_join(IDS |> rename(Hash=1)) |> 
+  group_by(Sample, consensus) |> 
+  summarise (nReads = sum(nReads)) |> 
+  inner_join(metadata |> select(Sample, Well)) |> 
+   mutate (Sample_Type = case_when(Sample %in% c("Blank_BT1_1_rep1","Blank_Long_2_rep1","Blank_rep1", "Cneg_rep1", "Cneg_2_rep1") ~ "Negativo",
+                                  Sample == "C+_CR_1:100_rep1" ~ "Positivo",
+                                  TRUE                         ~ "Muestras")) |> 
+  mutate (Sequence = case_when(str_detect(consensus, "Macropodidae") ~ "Canguro", 
+                               TRUE                                  ~"Other")) |> 
+  group_by(Sample_Type, Sequence, Well) |>
+  summarise(nReads= sum(nReads)) |> 
+  separate(Well, into = c("Row", "Column"),sep = 1, convert = T) |> 
+  ggplot(aes (x= Column, y = Row, fill= Sequence, color= Sample_Type, size = nReads))+
+  geom_point()+
+  facet_wrap(~Sequence)
+```
+
+Any other thing
+
+```{r}
+ASV_good|> 
+  inner_join(IDS |> rename(Hash=1)) |> 
+  group_by(Sample, consensus) |> 
+  summarise (nReads = sum(nReads)) |> 
+  inner_join(metadata |> select(Sample, Well)) |> 
+   mutate (Sample_Type = case_when(Sample %in% c("Blank_BT1_1_rep1","Blank_Long_2_rep1","Blank_rep1", "Cneg_rep1", "Cneg_2_rep1") ~ "Negativo",
+                                  Sample == "C+_CR_1:100_rep1" ~ "Positivo",
+                                  TRUE                         ~ "Muestras")) |> 
+   mutate (Sequence = case_when(str_detect(consensus, "Leporidae") ~ "Conejo", 
+                               TRUE                                  ~"Other")) |> 
+  filter (Sequence== "Conejo") |> 
+  group_by(Sample_Type, Sequence, Well) |>
+  summarise(nReads= sum(nReads)) |> 
+  separate(Well, into = c("Row", "Column"),sep = 1, convert = T) |> 
+  ggplot(aes (x= Column, y = Row, fill= Sequence, color= Sample_Type, size = nReads))+
+  geom_point()+
+  facet_wrap(~Sequence)
+  
+
+```
+
+```{r}
+ASV_good|> 
+  inner_join(IDS |> rename(Hash=1)) |> 
+  group_by(Sample, consensus) |> 
+  summarise (nReads = sum(nReads)) |> 
+  inner_join(metadata |> select(Sample, Well)) |> 
+   mutate (Sample_Type = case_when(Sample %in% c("Blank_BT1_1_rep1","Blank_Long_2_rep1","Blank_rep1", "Cneg_rep1", "Cneg_2_rep1") ~ "Negativo",
+                                  Sample == "C+_CR_1:100_rep1" ~ "Positivo",
+                                  TRUE                         ~ "Muestras")) -> combined_df
+### Cambiar id aspirin San Martin
+
+combined_df |> 
+  separate(Sample, into = c("ID", "rep"), sep = "_rep") |> 
+  mutate(ID = case_when(ID == "CI0034A" ~ "CHS_2606_1",
+                        ID == "CI0034B" ~ "CHS_2606_1",
+                        str_detect(ID, "SABH_2605") ~ "CHS_2605_1",
+                        TRUE         ~ ID)) |> 
+  left_join(metadata_vigo) -> full_dataset
+
+full_dataset |> 
+  filter (Sample_Type == "Muestras") |> 
+  filter (!str_detect(consensus, "Diprotodontia")) |> 
+  filter (!str_detect(consensus, "Hominidae")) |> 
+  arrange(desc(nReads))
+```
+
+```{r}
+full_dataset |> 
+  filter (Sample_Type!= "Muestras") |> 
+  arrange (desc(nReads))
+
+```
+
+### Ver los NAs
+
+```{r}
+Hashes <-  read_csv(here("data/seq_202610/pipeline_output/demultiplexed_20261021_1254/new_Hash_key_after_swarm.csv"))
+ASV_good|> 
+  left_join(IDS |> rename(Hash=1)) |> 
+  replace_na(list(consensus="NA")) |> 
+  filter (consensus %in% c("NA%NA%NA%NA%NA%NA%NA")) |> 
+  group_by(Hash, consensus, max_pident) |> 
+  summarise(nocc= n(),
+            nr= sum(nReads)) |> 
+  filter (nr>5) |> 
+  arrange(desc(nr)) |> 
+  left_join(Hashes) |> 
+  fasta_writer(header = Hash, sequence = seq, file.out = here("no_matches_vigo.fasta"))
+
+
+```
+

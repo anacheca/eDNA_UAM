@@ -1,0 +1,79 @@
+---
+title: "WTF"
+output: html_notebook
+---
+
+por cada ambiente, una charca 3 replicas ver el listado de especies, un comando q coja una tabla y haga una cosa 
+asv limpia la coge y te produce la tabla asiq antes se quitan todos los kanguros 
+
+
+```{r}
+library(tidyverse)
+library(here)
+library(googlesheets4)
+```
+
+```{r}
+ASV_goodC <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/new_ASV_after_swarm.csv"))
+metadataC <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/metadata.csv"))
+IDSC <- read_tsv (here("data/seq_202610/pipeline_output/blast_output/ids_threshold_100_99_97_95_90_split_part_0000.fasta.tsv"))
+metadata_vigo <- googlesheets4::read_sheet(
+  "1YBBJFffB0htU45nMEysNiTS86g61CE3xosvfnnOdy58"
+)
+```
+
+
+```{r}
+metadataC <- metadataC %>%
+  rename(Sample = Sample_name)
+
+ASV_goodC|> 
+  inner_join(IDS |> rename(Hash=1)) |> 
+  group_by(Sample, consensus) |> 
+  summarise (nReads = sum(nReads)) |> 
+  inner_join(metadataC |> select(Sample, Well)) |> 
+   mutate (Sample = case_when(Sample %in% c("Blank_BT1_F_1", "Blank_BT1_F_2","Blank_Long_F_1", "Blank_Long_F_2","blank_R1") ~ "Negativo",
+                                  Sample == "C_CG" ~ "Positivo",
+                                  TRUE                         ~ "Muestras")) -> combined_dfC
+### Cambiar id aspirin San Martin
+
+combined_dfC |> 
+  separate(Sample, into = c("ID", "rep"), sep = "_R") |> 
+  mutate(ID = case_when(ID == "CI0034A" ~ "CHS_2606_1",
+                        ID == "CI0034B" ~ "CHS_2606_1",
+                        str_detect(ID, "SABH_2605") ~ "CHS_2605_1",
+                        TRUE         ~ ID)) |> 
+  left_join(metadata_vigo) -> full_datasetC
+
+full_datasetC |> 
+  filter (ID == "Muestras") |> 
+  filter (!str_detect(consensus, "Diprotodontia")) |> 
+  filter (!str_detect(consensus, "Hominidae")) |> 
+  arrange(desc(nReads))
+```
+
+```{r}
+full_datasetC |> 
+  filter (ID!= "Muestras") |> 
+  arrange (desc(nReads))
+
+```
+
+### Ver los NAs
+
+```{r}
+HashesC <-  read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/new_Hash_key_after_swarm.csv"))
+ASV_goodC|> 
+  left_join(IDSC |> rename(Hash=1)) |> 
+  replace_na(list(consensus="NA")) |> 
+  filter (consensus %in% c("NA%NA%NA%NA%NA%NA%NA")) |> 
+  group_by(Hash, consensus, max_pident) |> 
+  summarise(nocc= n(),
+            nr= sum(nReads)) |> 
+  filter (nr>5) |> 
+  arrange(desc(nr)) |> 
+  left_join(Hashes) |> 
+  fasta_writer(header = Hash, sequence = seq, file.out = here("no_matchesC.fasta"))
+
+
+```
