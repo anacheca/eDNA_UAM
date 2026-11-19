@@ -1,3 +1,15 @@
+---
+title: "Metabarcoding of 12S MiFish & Mi Mammal with a MIDORI ref database"
+output: html_notebook
+---
+
+
+```{r}
+library(tidyverse)
+library(here)
+library(eDNAfuns)
+```
+
 step 1
 sbatch --array=1-5 /home/ana/ccc_cluster_scripts/scripts/taxonomy/Step1_blast_array.sh /home/ana/parques/seq_202610 /home/ana/parques/output_seq_202610_midori MIDORI2_UNIQ_NUC_GB274_srRNA_BLAST
 
@@ -15,7 +27,7 @@ desde "$PROJECTS"
 
 scp ana@meg1.bio.uam.es:parques/output_illumina_rCRUX/*fasta.tsv .C
 
-
+#TODO: Make sure Metadata entries are the same as sequencing entries
 
 Preguntas
 
@@ -27,9 +39,24 @@ Preguntas
 
 
 ```{r}
-metadata_muestreo <- googlesheets4::read_sheet(
-  "1YBBJFffB0htU45nMEysNiTS86g61CE3xosvfnnOdy58"
+metadata_muestreo_vigo <- googlesheets4::read_sheet(
+  "1RvXeAFJ0gvipvOIM879-ocah8T8YADNZl1G3iNNfpAs"
 )
+
+metadata_muestreo_vigo |> 
+  select (ID, Tag, Sample_type, Region, Location, Starting_dat, Longitude, Latitude) -> metadata_muestreo_vigo
+
+
+metadata_muestreo_cabaneros <- googlesheets4::read_sheet(
+  "1A8smelpvWS2_oLF4JIsL3UOw3p39ADeo9P6PwW2ln4I"
+)
+metadata_muestreo_cabaneros |> 
+  
+   select (ID, Tag, Sample_type,  Location, Starting_dat) -> metadata_muestreo_cabaneros
+
+
+metadata_muestreo <- bind_rows(metadata_muestreo_vigo, metadata_muestreo_cabaneros)
+
 ```
 
 
@@ -37,20 +64,57 @@ metadata_muestreo <- googlesheets4::read_sheet(
 
 Illumina Cabañeros
 
+Priemro cambiar el metadata de la pipeline para que los nombres de las replicas y de las muestras coincidan con los del archivo metadata que está en Gdrive. En teoria esto lo haremos una sola vez, para arreglar el metadata. Luego podremos descargar el output de la pipeline bien
+
+```{r}
+metadata_pipeline_C <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/metadata.csv"))
+
+metadata_pipeline_C |> 
+  mutate (Sample_name= str_replace(Sample_name, "_R1$", "_rep1"),
+          Sample_name= str_replace(Sample_name, "_R2$", "_rep2"),
+          Sample_name= str_replace(Sample_name, "_R3$", "_rep3"),
+          Sample_name= str_replace(Sample_name, "SABH_2605", "CHS_2605_1"),
+          Sample_name= case_when(Sample_name=="CI0034A" ~ "CHS_2606_1_rep1A",
+                                 Sample_name == "CI0034B" ~ "CHS_2606_1_rep1B",
+                                 TRUE                     ~ Sample_name)) |> 
+  arrange(Sample_name) -> metadata_pipeline_C
+
+metadata_pipeline_C |> 
+  mutate (Sample_Type= case_when(Sample_name == "C_CG" ~ "Pos_ctrl",
+                                 str_starts(Sample_name, "[B|b]lank") ~ "Neg_ctrl",
+                                 Sample_name == "Cneg" ~ "Neg_ctrl",
+                                 TRUE                 ~ "Sample")) |> 
+  select(Sample_name, Sample_Type) -> metadata_to_join
+```
+
+
 ```{r}
 here()
 # Read the ASV table
 asv_tableC <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/new_ASV_after_swarm.csv"))
 
-ids_tableC <- read_delim(here("data/seq_202610/pipeline_output_midori/ids_threshold.midori.fasta.tsv"), delim = "\t"
-)
+asv_tableC |>  
+  mutate (Sample_name= str_replace(Sample, "_R1$", "_rep1"),
+          Sample_name= str_replace(Sample, "_R2$", "_rep2"),
+          Sample_name= str_replace(Sample, "_R3$", "_rep3"),
+          Sample_name= str_replace(Sample, "SABH_2605", "CHS_2605_1"),
+          Sample_name= case_when(Sample=="CI0034A" ~ "CHS_2606_1_rep1A",
+                                 Sample == "CI0034B" ~ "CHS_2606_1_rep1B",
+                                 TRUE                     ~ Sample_name))
 
-metadataC <- read_csv(here("data/seq_202610/metadata.csv"))
+metadata_pipeline_C <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/metadata.csv"))
 
-mergedC <- left_join(asv_tableV, ids_tableV, by = c("Hash" = "qseqid"))
+Hashes_C <-  read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/Hash_key.csv")) |> 
+  mutate (len = str_length(sequence)) |> select(Hash, len)
+
+ids_table <- list.files(here("data/seq_202610/pipeline_output_midori"), full.names = T) |> map(~ read_delim(.x, delim = "\t"
+)) |> bind_rows() |> distinct()
+
+mergedC <- left_join(asv_tableC, ids_table, by = c("Hash" = "qseqid")) |> 
+  left_join(Hashes_C)
 ```
 
-create table
+There are many ASVs for which we dont know what they are. Midori is an eukaryota db, so if these are bacteria off target, it shoyld be NA, but also longer/shorter than the 172-174 MiFish fragment
 ```{r}
 #How many ASVa were assigned a taxaid
 sum(!is.na(mergedC$consensus))
@@ -58,54 +122,462 @@ sum(!is.na(mergedC$consensus))
 mergedC %>% 
   group_by(is.na(consensus)) %>% 
   summarise(nseqs = sum(nReads),
-            nHashes= n_distinct(Hash))
-
-mergedC %>%
-  filter(!is.na(consensus)) %>%
-  group_by(
-    Sample,
-    Taxa = consensus) %>% 
-  summarise(Reads = sum(nReads)
-  )-> species_tableC
-
+            nHashes= n_distinct(Hash),
+            median= median(len))
 ```
 
-To count how many samples each taxon appears in
+
+It is a different length, so it makes sense it doesn't have a match in the midori db
+
+### Add sample type to info
 
 ```{r}
-species_tableC |>
-  ungroup() |>
-  count(Taxa, sort = TRUE)
+mergedC |> 
+  distinct(Sample) |> 
+ mutate (Sample_Type= case_when( Sample == "C_CG" ~ "Pos_ctrl",
+                                 str_starts(Sample, "[B|b]lank") ~ "Neg_ctrl",
+                                 Sample == "Cneg" ~ "Neg_ctrl",
+                                 TRUE                 ~ "Samples")) |> 
+  inner_join(mergedC) -> mergedC
 ```
 
+##### Quality Check
 
-### Counting the occurrence of each taxon across samples
+Starting list of Hashes
 
 ```{r}
-species_tableC |>
-  ungroup() |>
-  count(Taxa, sort = TRUE)
+read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/Hash_key.csv"))  |> 
+  semi_join(mergedC) |> 
+  write_csv(here("data/seq_202610/Cleaned_output/Illumina_tags_DADA","starting.hash.key.csv"))
 ```
-This returns one row for each unique taxon detected across all samples.
+## Cleaning Process 1: Estimation of *Tag-jumping* or sample *cross-talk*
 
-```{r}
-mergedC |>
-  ungroup() |>
-  filter(!is.na(consensus), !grepl("%NA$", consensus)) |>
-  distinct(Sample, consensus) -> species_listC
-
-```
-
-
-
-
-Join with metadata muestreo and hashes
+Before we modify our datasets on any way, we can calculate how many sequences that were only supposed to be in the positives control appeared in the environmental samples, and how many did the opposite. First we divide the dataset into positive control and environmental samples. Also create an ordered list of the Hashes present in the positive controls, for ease of plotting.
 
 
 ```{r}
+mergedC %>% 
+  filter (Sample_Type == "Pos_ctrl") %>% 
+  group_by(Hash) %>% 
+  summarise(tot = sum(nReads)) %>% 
+  arrange(desc(tot)) %>% 
+  pull(Hash) -> good.order
+```
+Now let's create a jumping vector. What proportion of the reads found in the positives control come from elsewhere, and what proportion of the reads in the samples come from the positives control.
+
+### Step 1: Nest the dataset and split it in positives and samples
+
+To streamline the process and make it easier to execute it similarly but independently on each library, we nest the dataset by library. 
+So Step1 is create a nested table so we can run this analysis on each library independently. 
+
+
+```{r nesting the dataset}
+
+mergedC |> 
+  mutate(Library = "Illumina_Tags_Round_1") |> 
+  group_by(Library,Sample_Type) |> 
+  nest() |>  
+  pivot_wider(names_from = Sample_Type, values_from =  data) -> ASV.nested 
+```
+
+That wasn't too complicated. Let's start a summary function that keeps track of our cleaning process
+
+```{r summary.file}
+
+how.many <- function(ASVtable, round){
+  ASVtable %>% ungroup() %>% 
+    summarise(nsamples = n_distinct(Sample),
+              nHashes = n_distinct(Hash),
+              nReads = sum(nReads), 
+              Stage = paste0("Step_", round)) %>% 
+    gather(starts_with("n"), value = "number", key = "Stat")
+}
+
+ASV.nested %>% 
+  transmute(Summary = map(Samples, ~ how.many(ASVtable = .,round = 0)))  -> ASV.summary
+ASV.summary |> 
+
+  unnest(Summary)
+
+```
+### Step 2: Model the composition of the positive controls of each run 
+
+
+We create a vector of the composition of each positive control and substract it from the environmental samples from their runs
+
+
+
+```{r jumping vector}
+
+
+ASV.nested %>% 
+  mutate (contam.tibble = map(`Pos_ctrl`, 
+                              function(.x){
+                                .x %>%
+                                  group_by(Sample) %>%
+                                  mutate (TotalReadsperSample = sum(nReads)) %>%
+                                  mutate (proportion = nReads/TotalReadsperSample) %>%
+                                  group_by (Hash) %>%
+                                  summarise (vector_contamination = max (proportion))
+                                }) ) -> ASV.nested
+
+ASV.nested %>% 
+  group_by(Library) %>% 
+  select(contam.tibble) %>% 
+  unnest(cols = contam.tibble) # Check how it looks like
+
 
 
 ```
+
+### Step 3: Substract the composition of the positive controls from the environment samples
+
+The idea behind this procedure is that we know, for each run, how many reads from each Hash appeared in teh positive controls. These come from 2 processes: sequences we know should appear in the positive controls, and sequences that have *jumped* from the environment to the positive controls. With this procedure, we substract from every environmental sample the proportion of reads that jumped from elsewhere.
+
+```{r}
+mergedC |> 
+  filter (Sample_Type == "Pos_ctrl") |> 
+  distinct(Hash) -> hashes_pos_ctrl
+
+mergedC |> 
+  inner_join(hashes_pos_ctrl)
+```
+This is strange, because there is nothing shared between positive controls and the rest of the run. Or maybe we are great at this.
+
+Let's check if the negative controls are the ones influencing the samples
+
+```{r}
+mergedC |> 
+  filter (Sample_Type == "Neg_ctrl") |> 
+  distinct(Hash) -> hashes_neg_ctrl
+
+mergedC |> 
+  inner_join(hashes_neg_ctrl) |> 
+  group_by(Sample_Type) |> 
+  summarise (n_hash= n_distinct(Hash),
+             nr= sum(nReads),
+             nmuestras= n_distinct(Sample))
+```
+
+
+```{r cleaning step 1}
+ASV.nested %>% 
+  mutate(cleaned.tibble = map2(Samples, contam.tibble, function(.x,.y){ 
+    .x %>%
+      group_by (Sample) %>%
+      mutate (TotalReadsperSample = sum (nReads)) %>%
+      left_join(.y, by = "Hash") %>%
+      mutate (Updated_nReads = ifelse (!is.na(vector_contamination),  nReads - (ceiling(vector_contamination*TotalReadsperSample)), nReads)) %>%
+      filter (Updated_nReads > 0) %>%
+      ungroup() %>% 
+      dplyr::select (Sample, Hash, nReads = Updated_nReads)
+      
+    
+  })) -> ASV.nested
+
+ASV.nested %>% 
+  group_by(Library) %>% 
+  select(cleaned.tibble) %>% 
+  unnest(cleaned.tibble) #Check how they look
+
+
+```
+Add this step to the summary table we were creating
+
+```{r summary.file.2}
+ASV.nested %>% 
+  transmute( Summary.1 = map(cleaned.tibble, ~ how.many(ASVtable = .,round = "1.Jump"))) %>% 
+  left_join(ASV.summary) %>% 
+  mutate(Summary   = map2(Summary, Summary.1, bind_rows)) %>%
+  dplyr::select(-Summary.1) -> ASV.summary 
+
+ASV.summary |> unnest(Summary)
+```
+
+### Step 4: Substract the composition of the negative controls from the environment samples
+
+Clearly there are contamninants either in the lab or in the filtering materials or the reagents that show in the negative controls. These need to go too.
+
+
+
+
+```{r}
+ASV.nested %>% 
+  mutate (contam.negative.tibble = map(Neg_ctrl, 
+                              function(.x){
+                                .x %>%
+                                  group_by(Sample) %>%
+                                  mutate (TotalReadsperSample = sum(nReads)) %>%
+                                  mutate (proportion = nReads/TotalReadsperSample) %>%
+                                  group_by (Hash) %>%
+                                  summarise (vector_contamination = max (proportion))
+                                }) ) -> ASV.nested
+
+
+```
+Now substract it from cleaned_tibble
+
+```{r}
+ASV.nested %>% 
+  mutate(No_contamination_tibble = map2(cleaned.tibble, contam.negative.tibble, function(.x,.y){ 
+    .x %>%
+      group_by (Sample) %>%
+      mutate (TotalReadsperSample = sum (nReads)) %>%
+      left_join(.y, by = "Hash") %>%
+      mutate (Updated_nReads = ifelse (!is.na(vector_contamination),  nReads - (ceiling(vector_contamination*TotalReadsperSample)), nReads)) %>%
+      filter (Updated_nReads > 0) %>%
+      ungroup() %>% 
+      dplyr::select (Sample, Hash, nReads = Updated_nReads)
+      
+    
+  })) -> ASV.nested
+```
+
+```{r}
+ASV.nested %>% 
+  transmute( Summary.1 = map(No_contamination_tibble, ~ how.many(ASVtable = .,round = "2.Negative_control"))) %>% 
+  left_join(ASV.summary) %>% 
+  mutate(Summary   = map2(Summary, Summary.1, bind_rows)) %>%
+  dplyr::select(-Summary.1) -> ASV.summary 
+
+ASV.summary |> unnest(Summary)
+```
+
+## Cleaning Process 2: **Discarding PCR replicates with low number of reads**
+
+We will fit the number of reads assigned to each sample to a normal distribution and discard those samples with a probability of 95% of not fitting in that distribution. The output would be a dataset with less samples and potentially less number of unique Hashes.
+
+
+```{r fitting nReads per sample}
+
+ASV.nested %>% 
+  select(Library,No_contamination_tibble) %>% 
+  unnest(No_contamination_tibble) %>% 
+  group_by(Sample) %>%
+  summarise(tot = sum(nReads)) -> all.reps
+
+# Visualize
+
+all.reps %>%  
+  pull(tot) -> reads.per.sample
+
+names(reads.per.sample) <- all.reps %>% pull(Sample)  
+
+normparams.reads <- MASS::fitdistr(reads.per.sample, "normal")$estimate
+
+
+
+all.reps %>%  
+  mutate(prob = pnorm(tot, normparams.reads[1], normparams.reads[2])) -> all.reps
+
+#  probs <- pnorm(all_pairwise_distances, normparams[1], normparams[2])
+
+outliers <- 
+  all.reps %>% 
+  filter(prob < 0.075 & tot < normparams.reads[1])
+
+ASV.nested %>% 
+  mutate(Step.1.low.reads = map (No_contamination_tibble, ~ filter(.,!Sample %in% outliers$Sample) %>% ungroup)) -> ASV.nested
+
+ASV.nested %>% 
+  transmute( Summary.1 = map(Step.1.low.reads, ~ how.many(ASVtable = .,round = "3.Low.nReads"))) %>% 
+  left_join(ASV.summary) %>% 
+  mutate(Summary   = map2(Summary, Summary.1, bind_rows)) %>%
+  dplyr::select(-Summary.1) -> ASV.summary 
+
+```
+
+
+## Cleaning Process 3: **Full clearance from Positive control influence**
+
+Removing the Hashes that belong to the positive controls. First, for each Hash that appeared in the positive controls, determine whether a sequence is a true positive or a true environment. For each Hash, we will calculate, maximum, mean and total number of reads in both positive and samples, and then we will use the following decission tree:
+
+  * If all three statistics are higher in one of the groups, we will label it either of Environmental or Positive control influence.
+  
+  * If there are conflicting results, we will use the Hashes. to see if they belong to either the maximum abundance of a Hash is in a positive, then it is a positive, otherwise is a real sequence from the environment.
+
+
+Now, for each Hash in each set of positives controls, calculate the proportion of reads that were missasigned - they appeared somewhere they were not expected.
+We will divide that process in two: first . A second step would be to create a column named proportion switched, which states the proportion of reads from one Hash that jumped from the environment to a positive control or viceversa. The idea is that any presence below a threshold can be arguably belong to tag jumping.
+
+### DOES NOT WORK BECAUSE THERE ARE NO HASHES SHARED BETWEEN CONTROLS AND SAMPLES
+
+<!-- ```{r real or positive} -->
+
+
+<!-- mergedC %>%  -->
+<!--   filter (Hash %in% good.order) %>% -->
+<!--   group_by(Sample) %>%  -->
+<!--   mutate(tot.reads = sum(nReads)) %>%  -->
+<!--   group_by(Hash,Sample) %>%  -->
+<!--   mutate(prop = nReads/tot.reads) %>%  -->
+<!--   group_by(Hash, Sample_Type) %>%  -->
+<!--   summarise (max.  = max(prop), -->
+<!--              mean. = mean(prop), -->
+<!--              tot.  = sum(nReads)) %>%  -->
+<!--   pivot_longer(3:5, names_to = "Stat", values_to = "number") %>% -->
+<!--   pivot_wider(names_from = "Sample_Type", values_from  = "number", values_fill = 0) %>%  -->
+<!--   group_by(Hash, Stat) %>% -->
+<!--   mutate(origin = case_when(Pos_ctrl > Samples ~ "Positive.control", -->
+<!--                             TRUE                ~ "Environment")) %>%  -->
+<!--   group_by (Hash) %>% -->
+<!--   mutate(tot = n_distinct(origin)) -> Hash.fate.step2 -->
+
+<!-- Hash.fate.step2 %>%  -->
+<!--   filter(tot == 1) %>%  -->
+<!--   group_by(Hash) %>%  -->
+<!--   summarise(origin = unique(origin)) %>%  -->
+<!--   filter(origin == "Positive.control") -> Hashes.to.remove.step2 -->
+
+<!-- ASV.table %>%  -->
+<!--   group_by(Sample_Type, Hash) %>%  -->
+<!--   summarise(ocurrences =n()) %>%  -->
+<!--   pivot_wider(names_from = Sample_Type, values_from = ocurrences, values_fill = 0) %>%  -->
+<!--   #left_join(Hashes.to.remove.step2) %>%  -->
+<!--   #mutate(origin = case_when(is.na(origin) ~ "Kept", -->
+<!--    #                         TRUE          ~ "Discarded")) %>%  -->
+<!--   mutate(origin = case_when(`Positive Control` >= Samples ~ "Discarded", -->
+<!--                                    `Negative Control` >= Samples ~ "Discarded", -->
+<!--                                    TRUE                 ~ "Kept")) %>%  -->
+<!--   filter(origin == "Discarded") %>%  -->
+<!--   full_join(Hashes.to.remove.step2) -> Hashes.to.remove.step2 -->
+
+
+<!-- ``` -->
+<!-- IN order to train DADA2 to better distinguish when positive control sequences have arrived in the environment, we will keep the sequences in a csv file -->
+
+
+<!-- ```{r ASVs from positives} -->
+
+<!-- Hashes.to.remove.step2 %>%  -->
+<!--   left_join(Hash.key) %>%  -->
+<!--   select(Hash, seq) %>%  -->
+<!--   write_csv(here("To_sync", "Cleaned_up_data_DADA","Hashes_to_remove.csv")) -->
+
+<!-- ``` -->
+
+<!-- ### Remove the positive control hashes from the composition of the ASVs -->
+
+<!-- ```{r cleaning.Step2} -->
+
+<!-- ASV.nested %>%  -->
+<!--   mutate(Step2.tibble = map (Step.1.low.reads, ~ .x |> anti_join (Hashes.to.remove.step2) %>% ungroup())) -> ASV.nested -->
+
+<!-- ASV.nested %>%  -->
+<!--   transmute( Summary.1 = map(Step2.tibble, ~ how.many(ASVtable = .,round = "3.Positives"))) %>%  -->
+<!--   left_join(ASV.summary) %>%  -->
+<!--   mutate(Summary   = map2(Summary, Summary.1, bind_rows)) %>% -->
+<!--   dplyr::select(-Summary.1) -> ASV.summary  -->
+
+<!-- ASV.summary %>%  -->
+<!--   unnest() -->
+
+
+<!-- ``` -->
+
+## Exporting the output
+
+We will export the final cleaned table with four columns (Library, sample, Hash, nReads)
+
+```{r}
+
+ASV.nested %>% 
+  select(Library, Step.1.low.reads) %>% 
+  unnest(Step.1.low.reads) %>% 
+  mutate(nReads = as.integer(nReads)) %>% 
+  write_csv(here("data/seq_202610/Cleaned_output/Illumina_tags_DADA/ASV_table_after_cleanup.csv"))
+
+ASV.nested %>% 
+  select(Step.1.low.reads) %>% 
+  unnest(Step.1.low.reads) %>% 
+  distinct(Hash) %>% 
+  left_join(Hashes_C) %>% 
+  write_csv(here("data/seq_202610/Cleaned_output/Illumina_tags_DADA/Hash_Key_after_cleanup.csv"))
+
+
+
+```
+
+## Summary of the cleanup process
+
+```{r last graph}
+
+ASV.summary %>% 
+  unnest() %>% 
+  ggplot(aes(x=Stage, y=number, fill = Stat))+
+    geom_line(aes(group = Library, color = Library))+
+  facet_grid(Stat~., scales = "free")+
+  theme(axis.text.x = element_text(angle = 45, hjust =1))#,
+                                 
+
+
+```
+#### Add Taxonomical info, start with ecological interpretation  CABAñeros only
+
+```{r}
+ASV_good <- read_csv(here("data/seq_202610/Cleaned_output/Illumina_tags_DADA/ASV_table_after_cleanup.csv")) 
+
+Taxa_info <- list.files(here("data/seq_202610/pipeline_output_midori"), full.names = T) |> map(~ read_delim(.x, delim = "\t"
+)) |> bind_rows() |> distinct() |> rename  (Hash=1)
+
+
+inner_join(ASV_good, Taxa_info) |> 
+  group_by(consensus, Sample) |> 
+  summarise(nReads= sum(nReads)) |> 
+  separate(Sample, into = c("ID", "rep"), sep= "_R", remove = F) |> 
+  
+  inner_join(metadata_muestreo) -> all_together
+
+all_together |> 
+  # separate(ID, into=c())
+  group_by(consensus,ID,Sample_type,Location, Date=Starting_dat ) |> 
+  summarise(nrep= n(),
+            nReads= sum(nReads)) |> 
+  group_by(consensus,Sample_type,Location, Date ) |> 
+  summarise(nReads = sum(nReads), 
+            nrep=sum(nrep),
+            nSamples= n_distinct(ID)) -> collapsed_data
+```
+
+Explore by taxonomical groups
+
+```{r}
+taxonomy_cols <-  c("phylum", "class", "order", "family", "genus", "species")
+collapsed_data |> 
+  
+  separate(consensus, into = taxonomy_cols, sep = "%") |> 
+  mutate(across(taxonomy_cols, .fns= ~str_remove(.x, "_\\d*$"))) -> collapsed_data
+
+collapsed_data |> 
+  ggplot(aes(x=Location, y=nReads, fill= phylum))+
+  geom_col()
+```
+
+```{r}
+collapsed_data |> 
+  filter(phylum == "Chordata")
+  ggplot(aes(x=Location, y=nReads, fill=family=="Hominidae" ))+
+  geom_col()
+```
+Resto de secuencias de Illumina_Tags
+
+```{r}
+ASV_good <- read_csv(here("data/seq_202610/Cleaned_output/Illumina_tags_DADA/ASV_table_after_cleanup.csv")) 
+
+Taxa_info <- list.files(here("data/seq_202610/pipeline_output_midori"), full.names = T) |> map(~ read_delim(.x, delim = "\t"
+)) |> bind_rows() |> distinct() |> rename  (Hash=1)
+
+
+inner_join(ASV_good, Taxa_info) |> 
+  group_by(consensus, Sample) |> 
+  summarise(nReads= sum(nReads)) |> 
+  separate(Sample, into = c("ID", "rep"), sep= "_R", remove = F) |> 
+  
+  anti_join(metadata_muestreo) |> 
+  ungroup() |> distinct(Sample)
+```
+
+### TODO: run the same thing with CS VIGO. Check if there are txa matches missed in MIDORI but present in other dbs. Change input file once pipeline is done
 
 
 
