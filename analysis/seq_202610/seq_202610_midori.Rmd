@@ -580,11 +580,6 @@ inner_join(ASV_good, Taxa_info) |>
 ### TODO: run the same thing with CS VIGO. Check if there are txa matches missed in MIDORI but present in other dbs. Change input file once pipeline is done
 ##### Quality Check
 
-Starting list of Hashes - not found
-
-read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/Hash_key.csv"))  |> 
-  semi_join(mergedC) |> 
-  write_csv(here("data/seq_202610/Cleaned_output/Illumina_tags_DADA","starting.hash.key.csv"))
 
 
 
@@ -601,6 +596,12 @@ CS1 VIGO
 Priemro cambiar el metadata de la pipeline para que los nombres de las replicas y de las muestras coincidan con los del archivo metadata que está en Gdrive. En teoria esto lo haremos una sola vez, para arreglar el metadata. Luego podremos descargar el output de la pipeline bien
 
 ```{r}
+metadata_pipeline_V <- read_csv(here("data/seq_202610/pipeline_output/demultiplexed_20261021_1254/metadata.csv"))
+
+
+metadata_pipeline_V <- metadata_pipeline_V |>
+  rename(Sample_name = Sample)
+
 metadata_pipeline_V |> 
   mutate (Sample_name= str_replace(Sample_name, "SABH_2605", "CHS_2605_1"),
           Sample_name= case_when(Sample_name=="CI0034A" ~ "CHS_2606_1_rep1A",
@@ -608,21 +609,23 @@ metadata_pipeline_V |>
                                  TRUE                     ~ Sample_name)) |> 
   arrange(Sample_name) -> metadata_pipeline_V
 
-metadata_to_join <- metadata_pipeline_V |> 
+metadata_pipeline_V |> 
   mutate(
     Sample_Type = case_when(
-      Sample == "C+_CR_1:100_rep1" ~ "Pos_ctrl",
-      Sample %in% c(
-        "Blank_BT1_1_rep1",
-        "Blank_Long_2_rep1",
-        "Blank_rep1",
-        "Cneg_rep1",
-        "Cneg_2_rep1"
-      ) ~ "Neg_ctrl",
-      TRUE ~ "Samples"
-    )
-  ) |> 
-  select(Sample_name, Sample_Type)
+      Sample_name == "C+_CR_1:100_rep1" ~ "Pos_ctrl",
+      Sample_name %in% c("Blank_BT1_1_rep1", "Blank_Long_2_rep1", "Blank_rep1", "Cneg_rep1", "Cneg_2_rep1")    
+                         ~ "Neg_ctrl", 
+      TRUE               ~ "Sample")) |> 
+  select(Sample_name, Sample_Type) -> metadata_to_join
+
+
+
+metadata_pipeline_C |> 
+  mutate (Sample_Type= case_when(Sample_name == "C_CG" ~ "Pos_ctrl",
+                                 str_starts(Sample_name, "[B|b]lank") ~ "Neg_ctrl",
+                                 Sample_name == "Cneg" ~ "Neg_ctrl",
+                                 TRUE                 ~ "Sample")) |> 
+  select(Sample_name, Sample_Type) -> metadata_to_join
 ```
 
 
@@ -631,10 +634,13 @@ here()
 # Read the ASV table
 asv_tableV <- read_csv(here("data/seq_202610/pipeline_output/demultiplexed_20261021_1254/new_ASV_after_swarm.csv"))
 
+asv_tableV <- asv_tableV |>
+  rename(Sample_name = Sample)
+
 asv_tableV |>  
-  mutate (Sample_name= str_replace(Sample, "SABH_2605", "CHS_2605_1"),
-          Sample_name= case_when(Sample=="CI0034A" ~ "CHS_2606_1_rep1A",
-                                 Sample == "CI0034B" ~ "CHS_2606_1_rep1B",
+  mutate (Sample_name= str_replace(Sample_name, "SABH_2605", "CHS_2605_1"),
+          Sample_name= case_when(Sample_name=="CI0034A" ~ "CHS_2606_1_rep1A",
+                                 Sample_name == "CI0034B" ~ "CHS_2606_1_rep1B",
                                  TRUE                     ~ Sample_name))
 
 metadata_pipeline_V <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/metadata.csv"))
