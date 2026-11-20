@@ -64,28 +64,6 @@ metadata_muestreo <- bind_rows(metadata_muestreo_vigo, metadata_muestreo_cabaner
 
 Illumina Cabañeros
 
-Priemro cambiar el metadata de la pipeline para que los nombres de las replicas y de las muestras coincidan con los del archivo metadata que está en Gdrive. En teoria esto lo haremos una sola vez, para arreglar el metadata. Luego podremos descargar el output de la pipeline bien
-
-```{r}
-metadata_pipeline_C <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/metadata.csv"))
-
-metadata_pipeline_C |> 
-  mutate (Sample_name= str_replace(Sample_name, "_R1$", "_rep1"),
-          Sample_name= str_replace(Sample_name, "_R2$", "_rep2"),
-          Sample_name= str_replace(Sample_name, "_R3$", "_rep3"),
-          Sample_name= str_replace(Sample_name, "SABH_2605", "CHS_2605_1"),
-          Sample_name= case_when(Sample_name=="CI0034A" ~ "CHS_2606_1_rep1A",
-                                 Sample_name == "CI0034B" ~ "CHS_2606_1_rep1B",
-                                 TRUE                     ~ Sample_name)) |> 
-  arrange(Sample_name) -> metadata_pipeline_C
-
-metadata_pipeline_C |> 
-  mutate (Sample_Type= case_when(Sample_name == "C_CG" ~ "Pos_ctrl",
-                                 str_starts(Sample_name, "[B|b]lank") ~ "Neg_ctrl",
-                                 Sample_name == "Cneg" ~ "Neg_ctrl",
-                                 TRUE                 ~ "Sample")) |> 
-  select(Sample_name, Sample_Type) -> metadata_to_join
-```
 
 
 ```{r}
@@ -94,15 +72,16 @@ here()
 asv_tableC <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/new_ASV_after_swarm.csv"))
 
 asv_tableC |>  
-  mutate (Sample_name= str_replace(Sample, "_R1$", "_rep1"),
-          Sample_name= str_replace(Sample, "_R2$", "_rep2"),
-          Sample_name= str_replace(Sample, "_R3$", "_rep3"),
-          Sample_name= str_replace(Sample, "SABH_2605", "CHS_2605_1"),
-          Sample_name= case_when(Sample=="CI0034A" ~ "CHS_2606_1_rep1A",
-                                 Sample == "CI0034B" ~ "CHS_2606_1_rep1B",
-                                 TRUE                     ~ Sample_name))
-
-metadata_pipeline_C <- read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/metadata.csv"))
+  
+  mutate (Sample= str_replace(Sample, "_1A$", "_rep1A"),
+          Sample= str_replace(Sample, "_1B$", "_rep1B"),
+          Sample= str_replace(Sample, "_1C$", "_rep1C"),
+          Sample= str_replace(Sample, "_1D$", "_rep1D")) |> 
+  
+  mutate (Sample_Type= case_when(Sample == "C_CG" ~ "Pos_ctrl",
+                                 str_starts(Sample, "[B|b]lank") ~ "Neg_ctrl",
+                                 Sample == "Cneg" ~ "Neg_ctrl",
+                                 TRUE                 ~ "Samples")) -> asv_tableC
 
 Hashes_C <-  read_csv(here("data/seq_202610/demultiplexed_20261021_1216_Illumina/Hash_key.csv")) |> 
   mutate (len = str_length(sequence)) |> select(Hash, len)
@@ -129,17 +108,6 @@ mergedC %>%
 
 It is a different length, so it makes sense it doesn't have a match in the midori db
 
-### Add sample type to info
-
-```{r}
-mergedC |> 
-  distinct(Sample) |> 
- mutate (Sample_Type= case_when( Sample == "C_CG" ~ "Pos_ctrl",
-                                 str_starts(Sample, "[B|b]lank") ~ "Neg_ctrl",
-                                 Sample == "Cneg" ~ "Neg_ctrl",
-                                 TRUE                 ~ "Samples")) |> 
-  inner_join(mergedC) -> mergedC
-```
 
 ##### Quality Check
 
@@ -524,8 +492,7 @@ Taxa_info <- list.files(here("data/seq_202610/pipeline_output_midori"), full.nam
 inner_join(ASV_good, Taxa_info) |> 
   group_by(consensus, Sample) |> 
   summarise(nReads= sum(nReads)) |> 
-  separate(Sample, into = c("ID", "rep"), sep= "_R", remove = F) |> 
-  
+  separate(Sample, into = c("ID", "rep"), sep= "_rep", remove = F) |> 
   inner_join(metadata_muestreo) -> all_together
 
 all_together |> 
@@ -555,24 +522,9 @@ collapsed_data |>
 
 ```{r}
 collapsed_data |> 
-  filter(phylum == "Chordata")
+  filter(phylum == "Chordata") |> 
   ggplot(aes(x=Location, y=nReads, fill=family=="Hominidae" ))+
   geom_col()
 ```
 Resto de secuencias de Illumina_Tags
 
-```{r}
-ASV_good <- read_csv(here("data/seq_202610/Cleaned_output/Illumina_tags_DADA/ASV_table_after_cleanup.csv")) 
-
-Taxa_info <- list.files(here("data/seq_202610/pipeline_output_midori"), full.names = T) |> map(~ read_delim(.x, delim = "\t"
-)) |> bind_rows() |> distinct() |> rename  (Hash=1)
-
-
-inner_join(ASV_good, Taxa_info) |> 
-  group_by(consensus, Sample) |> 
-  summarise(nReads= sum(nReads)) |> 
-  separate(Sample, into = c("ID", "rep"), sep= "_R", remove = F) |> 
-  
-  anti_join(metadata_muestreo) |> 
-  ungroup() |> distinct(Sample)
-```
